@@ -229,9 +229,11 @@ dependencies {
     implementation 'com.github.bumptech.glide:glide:4.12.0'
     kapt 'com.github.bumptech.glide:compiler:4.12.0'
 
-    // GeckoView (Firefox/Gecko engine) — last major still supporting API 21 (Android 5.1).
+    // GeckoView (Firefox/Gecko engine) — last line whose transitive deps match this
+    // project's AGP 7.3.0 / Kotlin 1.6.21 toolchain (newer majors pull lifecycle 2.9.x,
+    // which AGP 7.3 cannot resolve). 108 still supports API 21 (Android 5.1).
     // Per-ABI artifact keeps the APK small; the fridge is arm64-v8a.
-    implementation 'org.mozilla.geckoview:geckoview-arm64-v8a:144.0.20251027123126'
+    implementation 'org.mozilla.geckoview:geckoview-arm64-v8a:108.0.20230104165113'
 
     // debugImplementation because LeakCanary should only run in debug builds.
     debugImplementation 'com.squareup.leakcanary:leakcanary-android:2.9.1'

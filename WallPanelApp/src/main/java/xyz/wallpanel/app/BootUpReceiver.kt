@@ -22,6 +22,7 @@ import android.content.Intent
 import androidx.preference.PreferenceManager
 import xyz.wallpanel.app.R
 import xyz.wallpanel.app.ui.activities.BrowserActivityNative
+import xyz.wallpanel.app.utils.BrowserLauncher
 
 class BootUpReceiver : BroadcastReceiver() {
 
@@ -30,7 +31,7 @@ class BootUpReceiver : BroadcastReceiver() {
             val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context.applicationContext)
             val startOnBoot = sharedPreferences.getBoolean(context.getString(R.string.key_setting_android_startonboot), false)
             if (startOnBoot) {
-                val i = Intent(context, BrowserActivityNative::class.java)
+                val i = BrowserLauncher.createIntent(context)
                 i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(i)
             }

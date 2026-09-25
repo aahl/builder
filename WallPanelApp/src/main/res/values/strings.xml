@@ -43,6 +43,8 @@
     <string name="title_setting_app_deviceid">Device ID</string>
     <string name="title_setting_app_preventsleep">Prevent Screen Sleep</string>
     <string name="title_setting_app_launchurl">Dashboard URL</string>
+    <string name="title_setting_browser_engine">Browser Engine</string>
+    <string name="pref_browser_engine_summary">Rendering engine used for the dashboard. Gecko is the Firefox engine (modern CSS/WebGL); System WebView is the built-in Android engine.</string>
     <string name="title_setting_app_showactivity">Show Browser Activity</string>
     <string name="title_setting_camera_enabled">Camera Enabled</string>
     <string name="title_setting_camera_cameraid">Selected Camera</string>
@@ -344,6 +346,16 @@
         <item>1</item>
         <item>2</item>
         <item>3</item>
+    </string-array>
+
+    <string-array name="browser_engine_names">
+        <item>"Gecko (Firefox Engine) (Recommended)"</item>
+        <item>"Android System WebView"</item>
+    </string-array>
+
+    <string-array name="browser_engine_values">
+        <item>"gecko"</item>
+        <item>"native"</item>
     </string-array>
 
 

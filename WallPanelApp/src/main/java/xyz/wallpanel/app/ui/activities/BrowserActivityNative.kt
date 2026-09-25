@@ -41,6 +41,7 @@ import xyz.wallpanel.app.ui.fragments.CodeBottomSheetFragment
 import xyz.wallpanel.app.utils.InternalWebChromeClient
 import xyz.wallpanel.app.ui.views.WebClientCallback
 import xyz.wallpanel.app.utils.InternalWebClient
+import xyz.wallpanel.app.utils.BrowserLauncher
 import xyz.wallpanel.app.BuildConfig
 import xyz.wallpanel.app.R
 import timber.log.Timber
@@ -87,6 +88,15 @@ class BrowserActivityNative : BaseBrowserActivity(), LifecycleObserver, WebClien
 
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
+
+        // This activity is the app's launcher/HOME entry point, but the actual
+        // browser backend is selected at runtime by the "Browser Engine" setting.
+        // When Gecko is selected (the default), hand off to BrowserActivityGecko.
+        if (BrowserLauncher.getBrowserActivity(this) == BrowserActivityGecko::class.java) {
+            startActivity(Intent(this, BrowserActivityGecko::class.java))
+            finish()
+            return
+        }
 
         super.onCreate(savedInstanceState)
 

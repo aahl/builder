@@ -27,6 +27,7 @@
     <string name="default_setting_mqtt_username">""</string>
     <string name="default_setting_android_startonboot">false</string>
     <string name="key_setting_android_browsertype">setting_android_browsertype</string>
+    <string name="default_setting_browser_engine">gecko</string>
     <string name="key_settings_sensors_light">setting_sensors_light</string>
     <string name="key_setting_test_zoomlevel">setting_test_zoomlevel</string>
     <string name="key_settings_sensors_magneticField">setting_sensors_magneticField</string>

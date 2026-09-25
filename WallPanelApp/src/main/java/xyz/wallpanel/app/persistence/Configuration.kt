@@ -273,6 +273,13 @@ constructor(private val context: Context, private val sharedPreferences: SharedP
             sharedPreferences.edit().putBoolean(context.getString(R.string.key_pref_browser_refresh), value).apply()
         }
 
+    var browserEngine: String
+        get() = getStringPref(R.string.key_setting_android_browsertype, R.string.default_setting_browser_engine)
+        set(value) {
+            sharedPreferences.edit().putString(context.getString(R.string.key_setting_android_browsertype), value).apply()
+            settingsUpdated()
+        }
+
     val cameraFPS: Float
         get() = try {
             getStringPref(R.string.key_setting_camera_fps, R.string.default_camera_fps).trim().toFloat()

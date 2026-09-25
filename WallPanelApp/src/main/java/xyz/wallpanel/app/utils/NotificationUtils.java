@@ -33,7 +33,7 @@ import androidx.core.app.TaskStackBuilder;
 import androidx.core.content.ContextCompat;
 
 import xyz.wallpanel.app.R;
-import xyz.wallpanel.app.ui.activities.BrowserActivityNative;
+import xyz.wallpanel.app.utils.BrowserLauncher;
 
 public class NotificationUtils extends ContextWrapper {
 
@@ -49,7 +49,7 @@ public class NotificationUtils extends ContextWrapper {
         super(context);
         this.resources = resources;
         ANDROID_CHANNEL_NAME = getString(R.string.text_android_channel_name);
-        notificationIntent = new Intent(context, BrowserActivityNative.class);
+        notificationIntent = BrowserLauncher.createIntent(context);
         notificationIntent.setFlags(Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP);
         int pendingFlags;
         if (Build.VERSION.SDK_INT >= 23) {
@@ -88,7 +88,7 @@ public class NotificationUtils extends ContextWrapper {
             NotificationCompat.Builder nb = getAndroidNotification(title, message);
             // This ensures that navigating backward from the Activity leads out of your app to the Home screen.
             TaskStackBuilder stackBuilder = TaskStackBuilder.create(getApplicationContext());
-            stackBuilder.addParentStack(BrowserActivityNative.class);
+            stackBuilder.addParentStack(BrowserLauncher.getBrowserActivity(getApplicationContext()));
             stackBuilder.addNextIntent(notificationIntent);
             nb.setContentIntent(pendingIntent);
             return nb.build();

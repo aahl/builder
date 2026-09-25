@@ -64,6 +64,14 @@
             android:title="@string/pref_user_agent_title"/>
 
         <ListPreference
+            android:defaultValue="gecko"
+            android:entries="@array/browser_engine_names"
+            android:entryValues="@array/browser_engine_values"
+            android:key="@string/key_setting_android_browsertype"
+            android:summary="@string/pref_browser_engine_summary"
+            android:title="@string/title_setting_browser_engine"/>
+
+        <ListPreference
             android:defaultValue="@string/default_setting_test_zoomlevel"
             android:entries="@array/zoom_level_names"
             android:entryValues="@array/zoom_level_values"

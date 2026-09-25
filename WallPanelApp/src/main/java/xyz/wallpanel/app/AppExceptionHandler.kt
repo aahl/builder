@@ -22,11 +22,12 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import xyz.wallpanel.app.ui.activities.BrowserActivityNative
+import xyz.wallpanel.app.utils.BrowserLauncher
 import kotlin.system.exitProcess
 
 class AppExceptionHandler(private val activity: Activity) : Thread.UncaughtExceptionHandler {
     override fun uncaughtException(thread: Thread, ex: Throwable) {
-        val intent = Intent(activity, BrowserActivityNative::class.java)
+        val intent = BrowserLauncher.createIntent(activity)
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP
                 or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 or Intent.FLAG_ACTIVITY_NEW_TASK)

@@ -237,13 +237,13 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
         }
     }
 
-    fun startReloadDelay() {
+    override fun startReloadDelay() {
         awaitingReconnect = true
         playlistHandler?.removeCallbacksAndMessages(null)
         reconnectionHandler.postDelayed(reloadPageRunnable, 30000)
     }
 
-    fun stopReloadDelay() {
+    override fun stopReloadDelay() {
         awaitingReconnect = false
         reconnectionHandler.removeCallbacks(reloadPageRunnable)
     }
@@ -266,8 +266,8 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
         geckoView = binding.activityBrowserWebviewGecko
 
         session = GeckoSession()
-        session.settings.allowJavascript = true
-        session.settings.useTrackingProtection = false
+        session.settings.setBoolean(GeckoSessionSettings.ALLOW_JAVASCRIPT, true)
+        session.settings.setBoolean(GeckoSessionSettings.USE_TRACKING_PROTECTION, false)
         session.settings.userAgentMode = GeckoSessionSettings.USER_AGENT_MODE_MOBILE
         session.open(getRuntime(this))
 

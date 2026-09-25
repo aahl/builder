@@ -27,7 +27,7 @@ plugins {
 
 def versionMajor = 0
 def versionMinor = 12
-def versionPatch = 0
+def versionPatch = 1 // GeckoView (Firefox engine) integration
 def versionBuild = 0 // bump for dog food builds, public betas, etc.
 
 def localProperty(String name, String fallback) {
@@ -93,7 +93,8 @@ android {
     buildToolsVersion "30.0.3"
     defaultConfig {
         applicationId "xyz.wallpanel.app"
-        minSdkVersion 19
+        // GeckoView 144 requires API 21; the fridge (Android 5.1) is API 22.
+        minSdkVersion 21
         targetSdkVersion 33
         versionCode versionMajor * 10000 + versionMinor * 1000 + versionPatch * 100 + versionBuild
         versionName "${versionMajor}.${versionMinor}.${versionPatch}.${versionBuild}"
@@ -106,7 +107,8 @@ android {
             reset()
             enable true
             universalApk true
-            include "armeabi-v7a", "x86", "arm64-v8a", "x86_64"
+            // GeckoView is only bundled for arm64-v8a (the fridge panel).
+            include "arm64-v8a"
         }
     }
     buildTypes {
@@ -226,6 +228,10 @@ dependencies {
     // Glide for image loading
     implementation 'com.github.bumptech.glide:glide:4.12.0'
     kapt 'com.github.bumptech.glide:compiler:4.12.0'
+
+    // GeckoView (Firefox/Gecko engine) — last major still supporting API 21 (Android 5.1).
+    // Per-ABI artifact keeps the APK small; the fridge is arm64-v8a.
+    implementation 'org.mozilla.geckoview:geckoview-arm64-v8a:144.0.20251027123126'
 
     // debugImplementation because LeakCanary should only run in debug builds.
     debugImplementation 'com.squareup.leakcanary:leakcanary-android:2.9.1'

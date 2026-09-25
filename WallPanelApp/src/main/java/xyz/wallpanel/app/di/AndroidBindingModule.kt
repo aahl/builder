@@ -48,6 +48,9 @@ internal abstract class AndroidBindingModule {
     internal abstract fun browserActivityNative(): BrowserActivityNative
 
     @ContributesAndroidInjector
+    internal abstract fun browserActivityGecko(): BrowserActivityGecko
+
+    @ContributesAndroidInjector
     internal abstract fun liveCameraActivity(): LiveCameraActivity
 
     @ContributesAndroidInjector

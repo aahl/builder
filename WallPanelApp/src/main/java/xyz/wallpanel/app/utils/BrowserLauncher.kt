@@ -40,7 +40,6 @@ object BrowserLauncher {
     const val ENGINE_GECKO = "gecko"
     const val ENGINE_NATIVE = "native"
 
-    @JvmStatic
     fun getBrowserActivity(context: Context): Class<*> {
         return when (engine(context)) {
             ENGINE_NATIVE -> BrowserActivityNative::class.java
@@ -49,18 +48,15 @@ object BrowserLauncher {
         }
     }
 
-    @JvmStatic
     fun createIntent(context: Context): Intent {
         return Intent(context, getBrowserActivity(context))
     }
 
-    @JvmStatic
     fun engine(context: Context): String {
         val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context.applicationContext)
         return prefs.getString(context.getString(R.string.key_setting_android_browsertype), ENGINE_AUTO).orEmpty()
     }
 
-    @JvmStatic
     fun isGeckoAvailable(): Boolean {
         val abis = android.os.Build.SUPPORTED_ABIS
         return abis != null && abis.contains("arm64-v8a")

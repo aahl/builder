@@ -93,6 +93,10 @@ class SettingsFragment : BaseSettingsFragment() {
         findPreference<SwitchPreference>(PREF_SETTINGS_REFRESH_ON_DISCONNECT) as SwitchPreference
     }
 
+    private val browserEnginePreference: ListPreference by lazy {
+        findPreference<ListPreference>(getString(R.string.key_setting_android_browsertype)) as ListPreference
+    }
+
     private val settingsDisablePreference: SwitchPreference by lazy {
         findPreference<SwitchPreference>(PREF_SETTINGS_BUTTON_DISABLE) as SwitchPreference
     }
@@ -197,6 +201,8 @@ class SettingsFragment : BaseSettingsFragment() {
         ignoreSSLErrorsPreference = findPreference<SwitchPreference>(getString(R.string.key_setting_ignore_ssl_errors)) as SwitchPreference
 
         browserRefreshOnDisconnect.isChecked = configuration.browserRefreshDisconnect
+        browserEnginePreference.value = configuration.browserEngine
+        bindPreferenceSummaryToValue(browserEnginePreference)
         fullScreenPreference.isChecked = configuration.fullScreen
         settingsTransparentPreference.isChecked = configuration.settingsTransparent
         settingsDisablePreference.isChecked = configuration.settingsDisabled
@@ -396,6 +402,13 @@ class SettingsFragment : BaseSettingsFragment() {
             PREF_SETTINGS_REFRESH_ON_DISCONNECT -> {
                 val value = browserRefreshOnDisconnect.isChecked
                 configuration.browserRefreshDisconnect = value
+            }
+            getString(R.string.key_setting_android_browsertype) -> {
+                val value = browserEnginePreference.value
+                if (!value.isNullOrEmpty()) {
+                    configuration.browserEngine = value
+                    browserEnginePreference.summary = browserEnginePreference.entry
+                }
             }
             PREF_SETTINGS_WEB_SCREENSAVER -> {
                 val value = webScreenSaver.isChecked

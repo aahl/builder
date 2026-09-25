@@ -22,8 +22,7 @@ plugins {
     id 'kotlin-kapt' // Allows for Kotlin annotation processors
     //id 'androidx.navigation.safeargs.kotlin'
     //id 'dagger.hilt.android.plugin'
-    id 'com.google.gms.google-services'
-    id 'com.google.firebase.crashlytics'
+    // Firebase Crashlytics + Google Services plugins removed for the no-GMS fridge build.
 }
 
 def versionMajor = 0
@@ -31,40 +30,64 @@ def versionMinor = 12
 def versionPatch = 0
 def versionBuild = 0 // bump for dog food builds, public betas, etc.
 
+def localProperty(String name, String fallback) {
+    def file = project.rootProject.file('local.properties')
+    if (!file.exists()) {
+        return fallback
+    }
+    def properties = new Properties()
+    file.withInputStream { properties.load(it) }
+    return properties.getProperty(name, fallback)
+}
+
+// Optional release signing. When keystore.properties is absent (e.g. CI builds
+// without a keystore) we fall back to the debug keystore so the produced APK is
+// still signed and installable.
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
 def CODE() {
-    Properties properties = new Properties()
-    properties.load(project.rootProject.file('local.properties').newDataInputStream())
-    return properties.getProperty("code")
+    return localProperty("code", "1234")
 }
 
 def HASS_URL() {
-    Properties properties = new Properties()
-    properties.load(project.rootProject.file('local.properties').newDataInputStream())
-    return properties.getProperty("hassUrl")
+    return localProperty("hassUrl", "")
 }
 
 def BROKER() {
-    Properties properties = new Properties()
-    properties.load(project.rootProject.file('local.properties').newDataInputStream())
-    return properties.getProperty("broker")
+    return localProperty("broker", "")
 }
 
 def BROKER_PASS() {
-    Properties properties = new Properties()
-    properties.load(project.rootProject.file('local.properties').newDataInputStream())
-    return properties.getProperty("brokerPass")
+    return localProperty("brokerPass", "")
 }
 
 def BROKER_USERNAME() {
-    Properties properties = new Properties()
-    properties.load(project.rootProject.file('local.properties').newDataInputStream())
-    return properties.getProperty("brokerUsername")
+    return localProperty("brokerUsername", "")
 }
 
 android {
     kapt {
         generateStubs = true
         correctErrorTypes = true
+    }
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            } else {
+                storeFile file(System.getProperty("user.home") + "/.android/debug.keystore")
+                storePassword "android"
+                keyAlias "androiddebugkey"
+                keyPassword "android"
+            }
+        }
     }
     compileSdkVersion 33
     buildToolsVersion "30.0.3"
@@ -90,6 +113,7 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
     buildFeatures {
@@ -167,7 +191,6 @@ dependencies {
 
     // LiveData + ViewModel
     implementation "androidx.lifecycle:lifecycle-extensions:2.2.0"
-    implementation 'com.google.firebase:firebase-analytics:21.1.1'
     implementation "androidx.lifecycle:lifecycle-reactivestreams-ktx:$versions.lifecycle"
     implementation "androidx.lifecycle:lifecycle-viewmodel-ktx:$versions.lifecycle"
 
@@ -211,23 +234,7 @@ dependencies {
     // Optional: detect retained objects. This helps but is not required.
     releaseImplementation 'com.squareup.leakcanary:leakcanary-object-watcher-android:2.9.1'
 
-    //  _____ _          _
-    // |  ___(_)_ __ ___| |__   __ _ ___  ___
-    // | |_  | | '__/ _ \ '_ \ / _` / __|/ _ \
-    // |  _| | | | |  __/ |_) | (_| \__ \  __/
-    // |_|   |_|_|  \___|_.__/ \__,_|___/\___|
-    //
-    implementation 'com.google.firebase:firebase-core:21.1.1'
-
-    // Import the Firebase BoM (see: https://firebase.google.com/docs/android/learn-more#bom)
-    // When using the BoM, you don't specify versions in Firebase library dependencies
-    implementation platform('com.google.firebase:firebase-bom:29.3.1')
-
-    // For an optimal experience using Crashlytics, add the Firebase SDK
-    // for Google Analytics. This is recommended, but not required.
-    implementation 'com.google.firebase:firebase-analytics'
-    // Firebase Crashlytics (Kotlin)
-    implementation 'com.google.firebase:firebase-crashlytics-ktx'
+    // Firebase (Analytics / Crashlytics / BoM) removed for the no-GMS fridge build.
 
     // Unit tests
     testImplementation 'junit:junit:4.+'

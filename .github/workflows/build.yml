@@ -49,17 +49,41 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Build debug and release APKs
+      - name: Build APKs
         run: ./gradlew --no-daemon assembleDevDebug assembleProdRelease
 
-      - name: Collect APKs
+      - name: Collect debug APK
         run: |
-          mkdir -p build-output
-          find . -path '*/build/outputs/apk/*.apk' -exec cp -v {} build-output/ \;
+          mkdir -p build-output/debug
+          find . -path '*/build/outputs/apk/dev/debug/*.apk' -exec cp -v {} build-output/debug/ \;
 
-      - name: Upload APKs
+      - name: Collect release APK (arm64-v8a)
+        run: |
+          mkdir -p build-output/release
+          find . -path '*/build/outputs/apk/prod/release/*arm64-v8a*release*.apk' -exec cp -v {} build-output/release/ \;
+
+      - name: Collect universal APK
+        run: |
+          mkdir -p build-output/universal
+          find . -path '*/build/outputs/apk/prod/release/*universal*release*.apk' -exec cp -v {} build-output/universal/ \;
+
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: wallpanel-apks
-          path: build-output/*.apk
+          name: wallpanel-debug
+          path: build-output/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload release APK (arm64-v8a)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallpanel-release-arm64-v8a
+          path: build-output/release/*.apk
+          if-no-files-found: error
+
+      - name: Upload universal APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallpanel-universal
+          path: build-output/universal/*.apk
           if-no-files-found: error

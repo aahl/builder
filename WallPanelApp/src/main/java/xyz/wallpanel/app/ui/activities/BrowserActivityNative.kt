@@ -138,15 +138,6 @@ class BrowserActivityNative : BaseBrowserActivity(), LifecycleObserver, WebClien
     override fun onStart() {
         super.onStart()
 
-        // Re-resolve the selected engine every time we come back to the foreground.
-        // The "Browser Engine" setting can be changed in Settings; when it no longer
-        // matches this activity, hand off so the change takes effect immediately.
-        if (BrowserLauncher.getBrowserActivity(this) != BrowserActivityNative::class.java) {
-            startActivity(BrowserLauncher.createIntent(this))
-            finish()
-            return
-        }
-
         if (configuration.useDarkTheme) {
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
         } else {

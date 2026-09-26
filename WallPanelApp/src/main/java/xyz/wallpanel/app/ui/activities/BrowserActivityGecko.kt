@@ -132,16 +132,6 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
     override fun onStart() {
         super.onStart()
 
-        // Re-resolve the selected engine every time we come back to the foreground.
-        // The "Browser Engine" setting can be changed in Settings; when it no longer
-        // matches this activity, hand off (or fall back) so the change takes effect
-        // immediately without restarting the app.
-        if (BrowserLauncher.getBrowserActivity(this) != BrowserActivityGecko::class.java) {
-            startActivity(BrowserLauncher.createIntent(this))
-            finish()
-            return
-        }
-
         if (configuration.useDarkTheme) {
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
         } else {

@@ -34,16 +34,36 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Generate debug keystore
+      - name: Restore fixed release keystore
         run: |
+          # A stable signing key is required so successive CI builds can be
+          # installed over each other (a fresh key per run causes
+          # INSTALL_FAILED_UPDATE_INCOMPATIBLE). The keystore is stored as a
+          # base64 secret; when it is absent the build still falls back to an
+          # ephemeral debug key (installable, but not upgrade-compatible).
           mkdir -p "$HOME/.android"
-          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$HOME/.android/wp-release.jks"
+            echo "keystore restored: $(ls -l "$HOME/.android/wp-release.jks" | awk '{print $5}') bytes"
+          else
+            echo "KEYSTORE_BASE64 not set; will fall back to an ephemeral debug keystore"
             keytool -genkeypair -v \
               -keystore "$HOME/.android/debug.keystore" \
               -storepass android -keypass android \
               -alias androiddebugkey \
               -keyalg RSA -keysize 2048 -validity 10000 \
               -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Write keystore.properties
+        run: |
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            cat > keystore.properties <<EOF
+          storeFile=$HOME/.android/wp-release.jks
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyAlias=wallpanel
+          keyPassword=${{ secrets.KEYSTORE_PASSWORD }}
+          EOF
           fi
 
       - name: Make gradlew executable

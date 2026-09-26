@@ -40,13 +40,25 @@ def localProperty(String name, String fallback) {
     return properties.getProperty(name, fallback)
 }
 
-// Optional release signing. When keystore.properties is absent (e.g. CI builds
-// without a keystore) we fall back to the debug keystore so the produced APK is
-// still signed and installable.
+// Optional release signing. A stable key is required so successive builds can
+// be installed over each other; a fresh key per build causes
+// INSTALL_FAILED_UPDATE_INCOMPATIBLE. keystore.properties is provided by CI
+// (see .github/workflows/build.yml) or by the developer. When it is absent we
+// fall back to the debug keystore so the produced APK is still signed and
+// installable.
 def keystorePropertiesFile = rootProject.file('keystore.properties')
 def keystoreProperties = new Properties()
 if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+// storeFile may be an absolute path (CI: $HOME/.android/wp-release.jks) or a
+// path relative to the app module; resolve both.
+def resolveStoreFile(String path) {
+    if (path == null || path.isEmpty()) {
+        return null
+    }
+    def f = new File(path)
+    return f.isAbsolute() ? f : file(path)
 }
 
 def CODE() {
@@ -77,7 +89,7 @@ android {
     signingConfigs {
         release {
             if (keystorePropertiesFile.exists()) {
-                storeFile file(keystoreProperties['storeFile'])
+                storeFile resolveStoreFile(keystoreProperties['storeFile'])
                 storePassword keystoreProperties['storePassword']
                 keyAlias keystoreProperties['keyAlias']
                 keyPassword keystoreProperties['keyPassword']

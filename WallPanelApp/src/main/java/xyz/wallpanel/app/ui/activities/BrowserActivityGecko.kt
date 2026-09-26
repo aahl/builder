@@ -24,6 +24,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Browser
 import android.view.*
+import android.view.MotionEvent
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatDelegate
@@ -41,6 +42,7 @@ import xyz.wallpanel.app.BuildConfig
 import xyz.wallpanel.app.R
 import xyz.wallpanel.app.databinding.ActivityBrowserGeckoBinding
 import xyz.wallpanel.app.network.ConnectionLiveData
+import xyz.wallpanel.app.utils.BrowserLauncher
 import xyz.wallpanel.app.ui.fragments.CodeBottomSheetFragment
 import timber.log.Timber
 import java.net.URISyntaxException
@@ -67,6 +69,8 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
     private var connectionLiveData: ConnectionLiveData? = null
     private var awaitingReconnect = false
     private var currentUrl: String = ""
+    private var touchDownY = 0f
+    private var touchDownX = 0f
 
     private val reloadPageRunnable = Runnable {
         initWebPageLoad()
@@ -127,6 +131,17 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
 
     override fun onStart() {
         super.onStart()
+
+        // Re-resolve the selected engine every time we come back to the foreground.
+        // The "Browser Engine" setting can be changed in Settings; when it no longer
+        // matches this activity, hand off (or fall back) so the change takes effect
+        // immediately without restarting the app.
+        if (BrowserLauncher.getBrowserActivity(this) != BrowserActivityGecko::class.java) {
+            startActivity(BrowserLauncher.createIntent(this))
+            finish()
+            return
+        }
+
         if (configuration.useDarkTheme) {
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
         } else {
@@ -136,14 +151,39 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
         if (configuration.browserRefresh) {
             binding.swipeContainer.setOnRefreshListener {
                 clearCache()
+                binding.swipeContainer.isRefreshing = false
                 initWebPageLoad()
+                // Safety net: never leave the spinner spinning forever if the page
+                // fails to report a load stop (bad URL, network error, Gecko quirk).
+                binding.swipeContainer.postDelayed({ binding.swipeContainer.isRefreshing = false }, 15000)
             }
-            mOnScrollChangedListener = ViewTreeObserver.OnScrollChangedListener {
-                binding.swipeContainer?.isEnabled = geckoView.scrollY == 0
+            // GeckoView renders in its own compositor and its View#getScrollY() is
+            // always 0, so we cannot use scrollY to decide whether the content is at
+            // the top. Instead gate pull-to-refresh on the touch gesture: only allow
+            // SwipeRefreshLayout to intercept when the finger drags downward, and
+            // disable it otherwise so an in-page scroll never triggers a refresh.
+            binding.swipeContainer.isEnabled = false
+            geckoView.setOnTouchListener { _, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        touchDownY = event.y
+                        touchDownX = event.x
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dy = event.y - touchDownY
+                        val dx = event.x - touchDownX
+                        // Enable the refresh gesture only for a mostly-vertical,
+                        // downward drag (a deliberate pull), not a horizontal swipe
+                        // or an upward/in-page scroll.
+                        binding.swipeContainer.isEnabled =
+                            dy > 24f && kotlin.math.abs(dy) > kotlin.math.abs(dx) * 1.5f && isAtPageTop()
+                    }
+                }
+                false
             }
-            binding.swipeContainer.viewTreeObserver.addOnScrollChangedListener(mOnScrollChangedListener)
         } else {
             binding.swipeContainer.isEnabled = false
+            geckoView.setOnTouchListener(null)
         }
 
         setupSettingsButton()
@@ -283,6 +323,10 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
                 Timber.d("gecko onPageStop success=$success url=$currentUrl")
                 if (success) {
                     pageLoadComplete(currentUrl)
+                } else {
+                    // Always dismiss the pull-to-refresh spinner, even when the load
+                    // fails, otherwise it would spin forever.
+                    complete()
                 }
             }
 
@@ -361,6 +405,13 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
         playlistHandler = Handler(Looper.getMainLooper())
         playlistHandler?.postDelayed(playlistRunnable, 10)
     }
+
+    /**
+     * Gate for pull-to-refresh. GeckoView renders in its own compositor and offers no
+     * reliable synchronous "is at top" signal, so we decide purely from the gesture:
+     * only a deliberate, mostly-vertical downward drag arms the SwipeRefreshLayout.
+     */
+    private fun isAtPageTop(): Boolean = true
 
     private fun showCodeBottomSheet() {
         codeBottomSheet = CodeBottomSheetFragment.newInstance(configuration.settingsCode,

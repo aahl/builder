@@ -89,16 +89,22 @@ class BrowserActivityNative : BaseBrowserActivity(), LifecycleObserver, WebClien
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
 
-        // This activity is the app's launcher/HOME entry point, but the actual
-        // browser backend is selected at runtime by the "Browser Engine" setting.
-        // When Gecko is selected (the default), hand off to BrowserActivityGecko.
+        // Both browser activities now declare their own LAUNCHER/HOME filter, so
+        // the system normally starts the correct backend directly. This handoff
+        // only matters when this activity is started explicitly (e.g. an old
+        // recents entry, or a launcher icon that still points at Native) while the
+        // "Browser Engine" setting selects Gecko.
+        //
+        // IMPORTANT: super.onCreate() must run before we return, otherwise the
+        // framework throws SuperNotCalledException and the app crashes. We call
+        // super first, then redirect and finish.
+        super.onCreate(savedInstanceState)
+
         if (BrowserLauncher.getBrowserActivity(this) == BrowserActivityGecko::class.java) {
             startActivity(Intent(this, BrowserActivityGecko::class.java))
             finish()
             return
         }
-
-        super.onCreate(savedInstanceState)
 
         if (BuildConfig.DEBUG) {
             configuration.mqttBroker = BuildConfig.BROKER

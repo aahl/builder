@@ -30,6 +30,7 @@
     </string-array>
 
     <string name="app_name">WallPanel</string>
+    <string name="app_name_gecko">WallPanel (Gecko)</string>
     <string name="wallpanel_service_notification_title">WallPanel</string>
     <string name="wallpanel_service_notification_message">WallPanel Running…</string>
     <string name="title_settings">Settings</string>

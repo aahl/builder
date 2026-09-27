@@ -56,6 +56,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>-->
+        <!--
+            Browser backends. Both activities are valid HOME/LAUNCHER entry points
+            so the user can pick either engine as the panel's default launcher.
+            Previously only BrowserActivityNative declared HOME, but its onCreate()
+            redirects to Gecko when the engine setting is Gecko and returns before
+            calling super.onCreate(), which threw SuperNotCalledException and made
+            the app crash every time it was set as the default home app (falling back
+            to the stock launcher). Declaring HOME on both activities lets the system
+            launch the chosen engine directly, so no in-onCreate handoff is needed for
+            the home case and the crash cannot happen.
+        -->
         <activity
             android:name="xyz.wallpanel.app.ui.activities.BrowserActivityNative"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
@@ -72,14 +83,26 @@
             </intent-filter>
         </activity>
         <!-- GeckoView (Firefox engine) browser backend. Selected from the
-             "Browser Engine" setting; BrowserActivityNative redirects here. -->
+             "Browser Engine" setting. It also declares HOME so it can be chosen
+             directly as the panel's default home app: picking it avoids the
+             onCreate handoff entirely, which is the crash-free path. It is
+             intentionally NOT a LAUNCHER entry so the app still shows a single
+             launcher icon; the launcher icon resolves the engine via the setting. -->
         <activity
             android:name="xyz.wallpanel.app.ui.activities.BrowserActivityGecko"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:enabled="true"
-            android:exported="false"
+            android:exported="true"
             android:hardwareAccelerated="true"
-            android:theme="@style/AppThemeFullScreen" />
+            android:label="@string/app_name_gecko"
+            android:theme="@style/AppThemeFullScreen">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
         <activity
             android:name="xyz.wallpanel.app.ui.activities.LiveCameraActivity"
             android:exported="true"

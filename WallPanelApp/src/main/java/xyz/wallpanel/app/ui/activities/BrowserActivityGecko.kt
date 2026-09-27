@@ -72,6 +72,12 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
     private var touchDownY = 0f
     private var touchDownX = 0f
 
+    // Last known vertical scroll offset, kept up to date from
+    // GeckoSession.ScrollDelegate.onScrollChanged(). GeckoView renders in its own
+    // compositor and its View#getScrollY() is always 0, so this is the only reliable
+    // way to know whether the page is currently scrolled to the top.
+    private var lastScrollY = 0
+
     private val reloadPageRunnable = Runnable {
         initWebPageLoad()
     }
@@ -234,12 +240,19 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
 
     /**
      * GeckoView does not expose a direct JavaScript evaluation API (WebView's
-     * evaluateJavascript). Feature parity for MQTT/HTTP "javascript" commands is a
-     * known limitation of the Gecko backend; we log the request instead of silently
-     * dropping it.
+     * evaluateJavascript). To keep MQTT/HTTP "javascript" (eval) commands working we
+     * fall back to a javascript: URI navigated on the current session, which Gecko
+     * executes in the page context. Unlike WebView's evaluateJavascript this cannot
+     * return a result and is subject to the same restrictions as bookmarklets, so we
+     * guard against an empty dashboard URL and log at debug level.
      */
     override fun evaluateJavascript(js: String) {
-        Timber.w("evaluateJavascript is not supported by the GeckoView backend: $js")
+        try {
+            session.loadUri("javascript:" + js.replace("\n", " "))
+            Timber.d("evaluateJavascript via javascript: URI (gecko): $js")
+        } catch (e: Exception) {
+            Timber.w(e, "Unable to run javascript on the GeckoView backend: $js")
+        }
     }
 
     override fun clearCache() {
@@ -297,6 +310,8 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
 
         session = GeckoSession()
         session.settings.allowJavascript = true
+        // Tracking protection stays off: the kiosk loads a single, trusted dashboard
+        // URL, and enabling it can interfere with the panel's API calls.
         session.settings.useTrackingProtection = false
         session.settings.userAgentMode = GeckoSessionSettings.USER_AGENT_MODE_MOBILE
         session.open(getRuntime(this))
@@ -328,6 +343,15 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
         session.contentDelegate = object : GeckoSession.ContentDelegate {
             override fun onFullScreen(s: GeckoSession, fullScreen: Boolean) {
                 applyFullscreen(fullScreen)
+            }
+        }
+
+        // Track the page scroll offset so pull-to-refresh can be gated to the top of
+        // the page (see isAtPageTop()). Required because GeckoView's View#getScrollY()
+        // is always 0.
+        session.scrollDelegate = object : GeckoSession.ScrollDelegate {
+            override fun onScrollChanged(s: GeckoSession, scrollX: Int, scrollY: Int) {
+                lastScrollY = scrollY
             }
         }
 
@@ -398,10 +422,12 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
 
     /**
      * Gate for pull-to-refresh. GeckoView renders in its own compositor and offers no
-     * reliable synchronous "is at top" signal, so we decide purely from the gesture:
-     * only a deliberate, mostly-vertical downward drag arms the SwipeRefreshLayout.
+     * reliable synchronous "is at top" signal from the View, so we track the last
+     * scroll offset reported by [GeckoSession.ScrollDelegate] and require the page to
+     * be at (or very near) the top before arming the SwipeRefreshLayout, in addition
+     * to the deliberate, mostly-vertical downward drag check.
      */
-    private fun isAtPageTop(): Boolean = true
+    private fun isAtPageTop(): Boolean = lastScrollY <= 2
 
     private fun showCodeBottomSheet() {
         codeBottomSheet = CodeBottomSheetFragment.newInstance(configuration.settingsCode,

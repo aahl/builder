@@ -7,6 +7,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Needed so the rolling-release step can create/update a release with GITHUB_TOKEN.
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Assemble debug + release APKs
@@ -107,3 +111,22 @@ jobs:
           name: wallpanel-universal
           path: build-output/universal/*.apk
           if-no-files-found: error
+
+      # Also publish the APKs on a Release. Actions artifacts are served from
+      # Azure blob storage which is heavily rate-limited for some networks, while
+      # release assets come from GitHub's CDN and download at full speed. The tag
+      # is refreshed on every push so it always points at the newest build.
+      - name: Publish APKs to a rolling release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="wallpanel-latest"
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "WallPanel latest ($GITHUB_SHA)" \
+            --notes "Rolling build from ${GITHUB_SHA}. arm64-v8a release for the Viomi fridge (API 22, Gecko default home)." \
+            build-output/release/*.apk#wallpanel-arm64-v8a-release.apk \
+            build-output/universal/*.apk#wallpanel-universal-release.apk \
+            build-output/debug/*.apk#wallpanel-debug.apk

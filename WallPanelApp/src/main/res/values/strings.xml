@@ -109,6 +109,7 @@
     <string name="pref_motion_detection_title">Motion Detection</string>
     <string name="pref_motion_adjustments_title">Motion Adjustments</string>
     <string name="title_sensor_settings">Sensor Settings</string>
+    <string name="title_android_settings">Android Settings</string>
     <string name="title_enable_sensor_data">Enable Sensor Publishing</string>
     <string name="summary_enable_sensor_data">Publishes available device sensor data over MQTT</string>
     <string name="menu_title_help">Help</string>

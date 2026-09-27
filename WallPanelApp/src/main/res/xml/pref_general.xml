@@ -219,6 +219,10 @@
             android:key="button_key_sensors"
             android:title="@string/title_sensor_settings"/>
 
+        <Preference
+            android:key="button_key_android_settings"
+            android:title="@string/title_android_settings"/>
+
     </PreferenceCategory>
 
     <Preference

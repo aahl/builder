@@ -71,6 +71,7 @@ class SettingsFragment : BaseSettingsFragment() {
     private var mqttPreference: Preference? = null
     private var httpPreference: Preference? = null
     private var sensorsPreference: Preference? = null
+    private var androidSettingsPreference: Preference? = null
     private var aboutPreference: Preference? = null
     private var brightnessPreference: Preference? = null
     private var browserRefreshPreference: SwitchPreference? = null
@@ -251,6 +252,7 @@ class SettingsFragment : BaseSettingsFragment() {
         mqttPreference = findPreference("button_key_mqtt")
         httpPreference = findPreference("button_key_http")
         sensorsPreference = findPreference("button_key_sensors")
+        androidSettingsPreference = findPreference("button_key_android_settings")
         aboutPreference = findPreference("button_key_about")
         brightnessPreference = findPreference("button_key_brightness")
 
@@ -291,6 +293,17 @@ class SettingsFragment : BaseSettingsFragment() {
             sensorsPreference?.onPreferenceClickListener = Preference.OnPreferenceClickListener { preference ->
                 view.let { Navigation.findNavController(it).navigate(R.id.sensors_action) }
                 false
+            }
+            androidSettingsPreference?.onPreferenceClickListener = Preference.OnPreferenceClickListener {
+                try {
+                    val intent = Intent(Settings.ACTION_SETTINGS)
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    Timber.d(e.message)
+                    Toast.makeText(requireContext(), getString(R.string.title_android_settings), Toast.LENGTH_SHORT).show()
+                }
+                true
             }
             codePreference.onPreferenceClickListener = Preference.OnPreferenceClickListener {
                 showCodeDialog()

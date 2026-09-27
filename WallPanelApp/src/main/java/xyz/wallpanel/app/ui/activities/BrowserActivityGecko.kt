@@ -78,6 +78,24 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
     // way to know whether the page is currently scrolled to the top.
     private var lastScrollY = 0
 
+    // Guard so only one session rebuild runs at a time, and so a rebuild that was
+    // triggered by onCrash/onKill does not immediately re-trigger itself.
+    private var rebuildingSession = false
+
+    // Watchdog: if a page load never reports onPageStop (e.g. the content process
+    // died mid-load), force a session rebuild after this delay.
+    private val sessionWatchdog = Handler(Looper.getMainLooper())
+    // A dashboard load that has not reported onPageStop within this window is
+    // considered stuck (usually because the content process died) and triggers a
+    // session rebuild.
+    private val SESSION_WATCHDOG_MS = 30000L
+    private val sessionWatchdogRunnable = Runnable {
+        if (!isFinishing) {
+            Timber.w("Page load never completed (watchdog); rebuilding Gecko session")
+            rebuildSession()
+        }
+    }
+
     private val reloadPageRunnable = Runnable {
         initWebPageLoad()
     }
@@ -199,6 +217,7 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
     override fun onDestroy() {
         super.onDestroy()
         codeBottomSheet?.dismiss()
+        sessionWatchdog.removeCallbacks(sessionWatchdogRunnable)
         try {
             geckoView.releaseSession()
             session.close()
@@ -307,7 +326,16 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
 
     private fun configureGecko(view: ViewGroup) {
         geckoView = binding.activityBrowserWebviewGecko
+        createSession()
+        geckoView.setSession(session)
+    }
 
+    /**
+     * Creates a fresh GeckoSession, applies settings and wires up all delegates.
+     * Extracted so it can be reused by [rebuildSession] after the content process
+     * dies (see ContentDelegate.onCrash/onKill and the load watchdog).
+     */
+    private fun createSession() {
         session = GeckoSession()
         session.settings.allowJavascript = true
         // Tracking protection stays off: the kiosk loads a single, trusted dashboard
@@ -326,6 +354,7 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
 
             override fun onPageStop(s: GeckoSession, success: Boolean) {
                 Timber.d("gecko onPageStop success=$success url=$currentUrl")
+                sessionWatchdog.removeCallbacks(sessionWatchdogRunnable)
                 if (success) {
                     pageLoadComplete(currentUrl)
                 } else {
@@ -343,6 +372,23 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
         session.contentDelegate = object : GeckoSession.ContentDelegate {
             override fun onFullScreen(s: GeckoSession, fullScreen: Boolean) {
                 applyFullscreen(fullScreen)
+            }
+
+            // The Gecko renderer runs in a separate process (xyz.wallpanel.app:tabN).
+            // On a memory-constrained device that process can be killed or crash,
+            // which leaves the GeckoView showing a stale/blank surface (a black
+            // screen) without our own process crashing. GeckoView reports both cases
+            // here; rebuild the session so the dashboard comes back by itself.
+            override fun onCrash(s: GeckoSession) {
+                if (s !== session) return // stale session, already replaced
+                Timber.w("Gecko content process crashed; rebuilding session")
+                rebuildSession()
+            }
+
+            override fun onKill(s: GeckoSession) {
+                if (s !== session) return // stale session, already replaced
+                Timber.w("Gecko content process was killed; rebuilding session")
+                rebuildSession()
             }
         }
 
@@ -385,7 +431,37 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
             }
         }
 
-        geckoView.setSession(session)
+    }
+
+    /**
+     * Tears down the current GeckoSession and builds a fresh one, then reloads the
+     * dashboard. Called when the content process dies (onCrash/onKill) or when a load
+     * never completes (watchdog). A guard prevents overlapping rebuilds, and stale
+     * delegate callbacks are ignored by comparing against the current session.
+     */
+    private fun rebuildSession() {
+        if (rebuildingSession) return
+        rebuildingSession = true
+        try {
+            sessionWatchdog.removeCallbacks(sessionWatchdogRunnable)
+            try {
+                geckoView.releaseSession()
+            } catch (e: Exception) {
+                Timber.w(e, "releaseSession failed during rebuild")
+            }
+            try {
+                session.close()
+            } catch (e: Exception) {
+                Timber.w(e, "session.close failed during rebuild")
+            }
+            createSession()
+            geckoView.setSession(session)
+            initWebPageLoad()
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to rebuild Gecko session")
+        } finally {
+            rebuildingSession = false
+        }
     }
 
     private fun applyFullscreen(fullScreen: Boolean) {
@@ -407,6 +483,11 @@ class BrowserActivityGecko : BaseBrowserActivity(), LifecycleObserver {
         geckoView.visibility = View.VISIBLE
         // set user agent
         configureWebSettings(configuration.browserUserAgent)
+        // Arm the watchdog: if this load never reports onPageStop (the content
+        // process died mid-load, or a URL hangs), rebuild the session so the panel
+        // does not stay on a black screen forever.
+        sessionWatchdog.removeCallbacks(sessionWatchdogRunnable)
+        sessionWatchdog.postDelayed(sessionWatchdogRunnable, SESSION_WATCHDOG_MS)
         // check if we are using playlist
         if (configuration.appLaunchUrl.lines().size == 1) {
             loadWebViewUrl(configuration.appLaunchUrl)

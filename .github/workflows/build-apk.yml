@@ -2,12 +2,14 @@ name: Build Android TV APK
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "要构建的版本号（如 1.2.7-a1）。留空则使用 package.json 中的版本。"
+        required: false
+        default: ""
   push:
     branches:
       - android/oriontv
-
-permissions:
-  contents: write
 
 jobs:
   direct_build:
@@ -26,9 +28,17 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Get version from package.json
-        id: package-version
-        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+      - name: Resolve version
+        id: version
+        run: |
+          INPUT_VERSION="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="$(node -p "require('./package.json').version")"
+          fi
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building version: $VERSION"
 
       - name: Setup JDK
         uses: actions/setup-java@v3
@@ -42,19 +52,16 @@ jobs:
       - name: Build TV APK
         run: yarn build-local
 
-      - name: Rename APK file
+      - name: Prepare APK artifact
         run: |
           mkdir -p artifacts
-          cp android/app/build/outputs/apk/release/app-release.apk artifacts/orionTV.${{ steps.package-version.outputs.version }}.apk
+          cp android/app/build/outputs/apk/release/app-release.apk "artifacts/orionTV.${{ steps.version.outputs.value }}.apk"
+          ls -l artifacts
 
-      - name: Create Release and Upload APK
-        uses: softprops/action-gh-release@v2
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: v${{ steps.package-version.outputs.version }}
-          name: Release v${{ steps.package-version.outputs.version }}
-          body: Automated release for version v${{ steps.package-version.outputs.version }}.
-          draft: false
-          prerelease: false
-          files: artifacts/orionTV.${{ steps.package-version.outputs.version }}.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: orionTV-${{ steps.version.outputs.value }}
+          path: artifacts/orionTV.${{ steps.version.outputs.value }}.apk
+          if-no-files-found: error
+          retention-days: 30

@@ -51,8 +51,19 @@ export default function PlayScreen() {
     // setShowNextEpisodeOverlay,
     reset,
     loadVideo,
+    playbackRate,
+    loadPlaybackRate,
   } = usePlayerStore();
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
+
+  useEffect(() => {
+    loadPlaybackRate();
+  }, [loadPlaybackRate]);
+
+  // 倍速变更后同步到播放器（处理异步恢复晚于视频就绪的竞态）
+  useEffect(() => {
+    videoRef.current?.setRateAsync(playbackRate, true).catch(() => {});
+  }, [playbackRate]);
 
   useEffect(() => {
     setVideoRef(videoRef);
@@ -133,6 +144,10 @@ export default function PlayScreen() {
             const jumpPosition = initialPosition || introEndTime || 0;
             if (jumpPosition > 0) {
               videoRef.current?.setPositionAsync(jumpPosition);
+            }
+            // 应用当前倍速
+            if (playbackRate !== 1.0) {
+              videoRef.current?.setRateAsync(playbackRate, true);
             }
             usePlayerStore.setState({ isLoading: false });
           }}

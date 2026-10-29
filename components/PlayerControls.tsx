@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
-import { Pause, Play, SkipForward, List, Tv, ArrowDownToDot, ArrowUpFromDot } from "lucide-react-native";
+import { Pause, Play, SkipForward, List, Tv, ArrowDownToDot, ArrowUpFromDot, Gauge } from "lucide-react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { MediaButton } from "@/components/MediaButton";
 
@@ -29,6 +29,8 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
     setOutroStartTime,
     introEndTime,
     outroStartTime,
+    playbackRate,
+    cyclePlaybackRate,
   } = usePlayerStore();
 
   const { detail } = useDetailStore();
@@ -99,6 +101,10 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
 
           <MediaButton onPress={onPlayNextEpisode} disabled={!hasNextEpisode}>
             <SkipForward color={hasNextEpisode ? "white" : "#666"} size={24} />
+          </MediaButton>
+
+          <MediaButton onPress={cyclePlaybackRate} timeLabel={`${playbackRate}x`}>
+            <Gauge color="white" size={24} />
           </MediaButton>
 
           <MediaButton onPress={setOutroStartTime} timeLabel={outroStartTime ? formatTime(outroStartTime) : undefined}>

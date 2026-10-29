@@ -2,8 +2,13 @@ import { create } from "zustand";
 import Toast from "react-native-toast-message";
 import { AVPlaybackStatus, Video } from "expo-av";
 import { RefObject } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PlayRecord, PlayRecordManager } from "@/services/storage";
 import useDetailStore, { episodesSelectorBySource } from "./detailStore";
+
+// 可选倍速列表（升序），默认 1.0x
+export const PLAYBACK_RATES = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0];
+const PLAYBACK_RATE_STORAGE_KEY = "mytv_playback_rate";
 
 interface Episode {
   url: string;
@@ -26,6 +31,7 @@ interface PlayerState {
   initialPosition: number;
   introEndTime?: number;
   outroStartTime?: number;
+  playbackRate: number;
   setVideoRef: (ref: RefObject<Video>) => void;
   loadVideo: (options: {
     source: string;
@@ -37,6 +43,9 @@ interface PlayerState {
   playEpisode: (index: number) => void;
   togglePlayPause: () => void;
   seek: (duration: number) => void;
+  setPlaybackRate: (rate: number) => void;
+  cyclePlaybackRate: () => void;
+  loadPlaybackRate: () => Promise<void>;
   handlePlaybackStatusUpdate: (newStatus: AVPlaybackStatus) => void;
   setLoading: (loading: boolean) => void;
   setShowControls: (show: boolean) => void;
@@ -68,6 +77,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   initialPosition: 0,
   introEndTime: undefined,
   outroStartTime: undefined,
+  playbackRate: 1.0,
   _seekTimeout: undefined,
   _isRecordSaveThrottled: false,
 
@@ -168,6 +178,42 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     }
     const timeoutId = setTimeout(() => set({ isSeeking: false }), 1000);
     set({ _seekTimeout: timeoutId });
+  },
+
+  setPlaybackRate: async (rate) => {
+    const { videoRef } = get();
+    set({ playbackRate: rate });
+    AsyncStorage.setItem(PLAYBACK_RATE_STORAGE_KEY, String(rate)).catch((error) => {
+      console.info("Failed to persist playback rate", error);
+    });
+    try {
+      await videoRef?.current?.setRateAsync(rate, true);
+    } catch (error) {
+      console.error("Failed to set playback rate:", error);
+      Toast.show({ type: "error", text1: "设置倍速失败" });
+    }
+  },
+
+  cyclePlaybackRate: () => {
+    const { playbackRate, setPlaybackRate } = get();
+    const currentIndex = PLAYBACK_RATES.indexOf(playbackRate);
+    const fallbackIndex = PLAYBACK_RATES.indexOf(1.0);
+    const nextIndex = currentIndex === -1 ? fallbackIndex : (currentIndex + 1) % PLAYBACK_RATES.length;
+    setPlaybackRate(PLAYBACK_RATES[nextIndex]);
+  },
+
+  loadPlaybackRate: async () => {
+    try {
+      const saved = await AsyncStorage.getItem(PLAYBACK_RATE_STORAGE_KEY);
+      if (saved !== null) {
+        const rate = parseFloat(saved);
+        if (!isNaN(rate) && PLAYBACK_RATES.includes(rate)) {
+          set({ playbackRate: rate });
+        }
+      }
+    } catch (error) {
+      console.info("Failed to load playback rate", error);
+    }
   },
 
   setIntroEndTime: () => {
@@ -321,6 +367,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       initialPosition: 0,
       introEndTime: undefined,
       outroStartTime: undefined,
+      playbackRate: 1.0,
     });
   },
 }));

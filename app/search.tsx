@@ -5,7 +5,8 @@ import { ThemedText } from "@/components/ThemedText";
 import VideoCard from "@/components/VideoCard.tv";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
 import { api, SearchResult } from "@/services/api";
-import { Search, QrCode } from "lucide-react-native";
+import { SearchHistoryManager } from "@/services/storage";
+import { Search, QrCode, History, Trash2 } from "lucide-react-native";
 import { StyledButton } from "@/components/StyledButton";
 import { useRemoteControlStore } from "@/stores/remoteControlStore";
 import { RemoteControlModal } from "@/components/RemoteControlModal";
@@ -18,12 +19,27 @@ export default function SearchScreen() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<string[]>([]);
   const textInputRef = useRef<TextInput>(null);
   const colorScheme = "dark"; // Replace with useColorScheme() if needed
   const [isInputFocused, setIsInputFocused] = useState(false);
   const { showModal: showRemoteModal, lastMessage } = useRemoteControlStore();
   const { remoteInputEnabled } = useSettingsStore();
   const router = useRouter();
+
+  const loadHistory = async () => {
+    try {
+      const items = await SearchHistoryManager.get();
+      setHistory(items);
+    } catch (err) {
+      console.info("Failed to load search history:", err);
+    }
+  };
+
+  useEffect(() => {
+    loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (lastMessage) {
@@ -44,12 +60,22 @@ export default function SearchScreen() {
   }, []);
 
   const handleSearch = async (searchText?: string) => {
-    const term = typeof searchText === "string" ? searchText : keyword;
-    if (!term.trim()) {
+    const term = (typeof searchText === "string" ? searchText : keyword).trim();
+    if (!term) {
       Keyboard.dismiss();
       return;
     }
     Keyboard.dismiss();
+    setKeyword(term);
+
+    // Record to search history (non-blocking for UI)
+    try {
+      await SearchHistoryManager.add(term);
+      loadHistory();
+    } catch (err) {
+      console.info("Failed to save search history:", err);
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -68,6 +94,15 @@ export default function SearchScreen() {
   };
 
   const onSearchPress = () => handleSearch();
+
+  const handleClearHistory = async () => {
+    try {
+      await SearchHistoryManager.clear();
+      setHistory([]);
+    } catch (err) {
+      console.info("Failed to clear search history:", err);
+    }
+  };
 
   const handleQrPress = () => {
     if (!remoteInputEnabled) {
@@ -136,8 +171,36 @@ export default function SearchScreen() {
           numColumns={5} // Adjust based on your card size and desired layout
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
-            <View style={styles.centerContainer}>
-              <ThemedText>输入关键词开始搜索</ThemedText>
+            <View style={styles.historyContainer}>
+              {history.length > 0 ? (
+                <>
+                  <View style={styles.historyHeader}>
+                    <View style={styles.historyTitleRow}>
+                      <History size={20} color="#888" />
+                      <ThemedText style={styles.historyTitle}>搜索历史</ThemedText>
+                    </View>
+                    <StyledButton variant="ghost" style={styles.clearButton} onPress={handleClearHistory}>
+                      <Trash2 size={18} color="#888" />
+                    </StyledButton>
+                  </View>
+                  <View style={styles.historyChips}>
+                    {history.map((item) => (
+                      <StyledButton
+                        key={item}
+                        variant="ghost"
+                        style={styles.historyChip}
+                        textStyle={styles.historyChipText}
+                        text={item}
+                        onPress={() => handleSearch(item)}
+                      />
+                    ))}
+                  </View>
+                </>
+              ) : (
+                <View style={styles.centerContainer}>
+                  <ThemedText>输入关键词开始搜索</ThemedText>
+                </View>
+              )}
             </View>
           }
         />
@@ -190,5 +253,42 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 10,
+    flexGrow: 1,
+  },
+  historyContainer: {
+    paddingHorizontal: 10,
+    paddingTop: 20,
+    flex: 1,
+  },
+  historyHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 15,
+  },
+  historyTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  historyTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#aaa",
+  },
+  clearButton: {
+    padding: 8,
+  },
+  historyChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  historyChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  historyChipText: {
+    fontSize: 16,
   },
 });

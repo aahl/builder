@@ -2,7 +2,11 @@
  * 广告过滤本地代理
  *
  * 启动一个本地 HTTP 服务（默认 127.0.0.1:12347）。播放器把 playlist 请求打到本代理：
- *   http://127.0.0.1:12347/proxy?u=<encodeURIComponent(原始m3u8)>
+ *   http://127.0.0.1:12347/proxy.m3u8?u=<encodeURIComponent(原始m3u8)>
+ *
+ * 注意：路径必须带 .m3u8 后缀！ExoPlayer 用 URL 最后一段的扩展名推断内容类型
+ * （Util.inferContentType），没有后缀会被当成渐进式媒体用 MP4/TS 解复用器去读，
+ * 报 UnrecognizedInputFormatException / unexpected end of stream。
  *
  * 代理行为（一跳完成，不依赖 302 重定向）：
  *   - 若 u 是 master 播放列表 -> 解析出最高码率子列表 URL，再直接对该子列表做过滤并返回
@@ -37,7 +41,7 @@ function cacheSet(key: string, body: string) {
 }
 
 function isPlaylistUrl(u: string): boolean {
-  return /\.m3u8(\?|$)/i.test(u) || /\/proxy\?/i.test(u);
+  return /\.m3u8(\?|$)/i.test(u) || /\/proxy(\.m3u8)?\?/i.test(u);
 }
 
 function getQueryParam(urlPath: string, name: string): string | null {
@@ -187,7 +191,8 @@ class AdFilterProxyService {
     if (!this.running) return originalUrl;
     if (!isPlaylistUrl(originalUrl)) return originalUrl;
     if (originalUrl.startsWith(`http://127.0.0.1:${AD_PROXY_PORT}/proxy`)) return originalUrl;
-    return `http://127.0.0.1:${AD_PROXY_PORT}/proxy?u=${encodeURIComponent(originalUrl)}`;
+    // 必须保留 .m3u8 后缀，否则 ExoPlayer 无法识别为 HLS
+    return `http://127.0.0.1:${AD_PROXY_PORT}/proxy.m3u8?u=${encodeURIComponent(originalUrl)}`;
   }
 }
 

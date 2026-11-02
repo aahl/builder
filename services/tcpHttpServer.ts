@@ -66,7 +66,7 @@ class TCPHttpServer {
     }
   }
 
-  private formatHttpResponse(response: HttpResponse): Buffer {
+  private formatHttpResponse(response: HttpResponse): string {
     const statusTexts: { [key: number]: string } = {
       200: 'OK',
       302: 'Found',
@@ -76,21 +76,23 @@ class TCPHttpServer {
     };
 
     const statusText = statusTexts[response.statusCode] || 'Unknown';
-    const bodyBuf = Buffer.from(response.body ?? '', 'utf8');
+    const body = response.body ?? '';
+    // 注意：React Native(Hermes) 没有 Node 的 Buffer 全局对象，这里用 TextEncoder 取字节长度、
+    // 以字符串写回（m3u8 内容均为 ASCII，字节长度=字符长度，Content-Length 精确）。
+    const bodyLen = new TextEncoder().encode(body).length;
     const headers: { [key: string]: string } = {
-      'Content-Length': bodyBuf.length.toString(),
+      'Content-Length': bodyLen.toString(),
       'Connection': 'close',
       ...response.headers
     };
 
-    let head = `HTTP/1.1 ${response.statusCode} ${statusText}\r\n`;
+    let httpResponse = `HTTP/1.1 ${response.statusCode} ${statusText}\r\n`;
     for (const [key, value] of Object.entries(headers)) {
-      head += `${key}: ${value}\r\n`;
+      httpResponse += `${key}: ${value}\r\n`;
     }
-    head += '\r\n';
-
-    // 二进制安全拼接头与体（Buffer.concat），避免中文/大响应被截断导致 unexpected end of stream
-    return Buffer.concat([Buffer.from(head, 'utf8'), bodyBuf]);
+    httpResponse += '\r\n';
+    httpResponse += body;
+    return httpResponse;
   }
 
   public setRequestHandler(handler: RequestHandler) {
@@ -129,14 +131,14 @@ class TCPHttpServer {
             // Check if we have a complete HTTP request
             if (requestData.includes('\r\n\r\n')) {
               handled = true;
-              let outBuf: Buffer;
+              let outStr: string;
               try {
                 const request = this.parseHttpRequest(requestData);
                 if (request && this.requestHandler) {
                   const response = await this.requestHandler(request);
-                  outBuf = this.formatHttpResponse(response);
+                  outStr = this.formatHttpResponse(response);
                 } else {
-                  outBuf = this.formatHttpResponse({
+                  outStr = this.formatHttpResponse({
                     statusCode: 400,
                     headers: { 'Content-Type': 'text/plain' },
                     body: 'Bad Request'
@@ -144,7 +146,7 @@ class TCPHttpServer {
                 }
               } catch (error) {
                 console.info('[TCPHttpServer] Error handling request:', error);
-                outBuf = this.formatHttpResponse({
+                outStr = this.formatHttpResponse({
                   statusCode: 500,
                   headers: { 'Content-Type': 'text/plain' },
                   body: 'Internal Server Error'
@@ -152,9 +154,9 @@ class TCPHttpServer {
               }
               
               requestData = '';
-              // 写入后立即 end()（Node 语义：会在数据全部发出后发送 FIN，不截断）
+              // 字符串写回（RN 无 Buffer）；Node 语义下 end() 会在数据发出后发送 FIN
               try {
-                socket.write(outBuf);
+                socket.write(outStr);
               } catch {}
               try {
                 socket.end();

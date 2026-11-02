@@ -12,9 +12,29 @@
  * 分片不走代理：过滤后的 playlist 里全是绝对 URL，播放器直连 CDN。
  */
 import TCPHttpServer from "./tcpHttpServer";
-import { fetchAndFilterPlaylist, resolveMediaPlaylistUrl } from "./adFilter";
+import { analyzePlaylistText, pickBestMediaUrl, rebuildPlaylist, absolutize } from "./adFilter";
 
 export const AD_PROXY_PORT = 12347;
+
+// 简易内存缓存：同一 playlist 在短时间内重复请求（播放器重试/预加载）直接命中，秒回。
+const CACHE_TTL = 60_000;
+const CACHE_MAX = 120;
+const playlistCache = new Map<string, { body: string; exp: number }>();
+
+function cacheGet(key: string): string | null {
+  const hit = playlistCache.get(key);
+  if (!hit) return null;
+  if (hit.exp < Date.now()) {
+    playlistCache.delete(key);
+    return null;
+  }
+  return hit.body;
+}
+
+function cacheSet(key: string, body: string) {
+  if (playlistCache.size >= CACHE_MAX) playlistCache.clear();
+  playlistCache.set(key, { body, exp: Date.now() + CACHE_TTL });
+}
 
 function isPlaylistUrl(u: string): boolean {
   return /\.m3u8(\?|$)/i.test(u) || /\/proxy\?/i.test(u);
@@ -45,6 +65,18 @@ const redirect = (to: string) => ({
   body: "",
 });
 
+/** 把播放列表里所有相对路径的分片/子列表 URI 绝对化（不改动注释行）。 */
+function absolutizePlaylistText(text: string, baseUrl: string): string {
+  return text
+    .split(/\r?\n/)
+    .map((line) => {
+      const s = line.trim();
+      if (!s || s.startsWith("#")) return line;
+      return absolutize(s, baseUrl);
+    })
+    .join("\n");
+}
+
 class AdFilterProxyService {
   private server: TCPHttpServer | null = null;
   private running = false;
@@ -52,35 +84,78 @@ class AdFilterProxyService {
   constructor() {
     this.server = new TCPHttpServer(AD_PROXY_PORT);
     this.server.setRequestHandler(async (request) => {
-      try {
-        const target = getQueryParam(request.url, "u");
-        if (!target) {
-          return { statusCode: 400, headers: { "Content-Type": "text/plain" }, body: "missing u" };
-        }
-        const original = target;
+      const target = getQueryParam(request.url, "u");
+      if (!target) {
+        return { statusCode: 400, headers: { "Content-Type": "text/plain" }, body: "missing u" };
+      }
+      const okHeaders = {
+        "Content-Type": "application/vnd.apple.mpegurl",
+        "Access-Control-Allow-Origin": "*",
+      };
 
-        // master -> 解析子列表，再对该子列表过滤
-        let mediaUrl = original;
-        const sub = await resolveMediaPlaylistUrl(original);
-        if (sub) mediaUrl = sub;
+      // 命中缓存直接返回（重试/重复请求秒回，避免超时）
+      const cachedBody = cacheGet(target);
+      if (cachedBody !== null) {
+        return { statusCode: 200, headers: okHeaders, body: cachedBody };
+      }
+
+      // 兜底：直接回吐原始内容（仍以 200 返回，避免播放器跨协议 302 失败）
+      // 并把相对路径分片绝对化，避免非标准 master 在代理下 404。
+      const passthrough = async (url: string) => {
+        try {
+          const r = await fetch(url);
+          if (r.ok) {
+            const raw = await r.text();
+            const body = absolutizePlaylistText(raw, url);
+            return { statusCode: 200, headers: okHeaders, body };
+          }
+        } catch {}
+        return redirect(url);
+      };
+
+      try {
+        // 只下载一次原始地址
+        let resp: Response | null = null;
+        try {
+          resp = await fetch(target);
+        } catch {
+          return redirect(target);
+        }
+        if (!resp || !resp.ok) return redirect(target);
+        const text = await resp.text();
+
+        // master -> 解析出最高码率子列表，再取一次子列表内容
+        let mediaText = text;
+        let mediaBase = target;
+        if (!/#EXTINF/.test(text) && /#EXT-X-STREAM-INF/.test(text)) {
+          const sub = pickBestMediaUrl(text, target);
+          if (sub) {
+            mediaBase = sub;
+            try {
+              const r2 = await fetch(sub);
+              if (r2.ok) mediaText = await r2.text();
+              else return passthrough(sub);
+            } catch {
+              return passthrough(sub);
+            }
+          }
+        }
 
         // 始终返回绝对化后的媒体列表（有广告则剔除，无广告则原样绝对化），避免相对路径 404
-        const cleaned = await fetchAndFilterPlaylist(mediaUrl);
+        const cleaned = await analyzePlaylistText(mediaText, mediaBase);
         if (cleaned) {
-          return {
-            statusCode: 200,
-            headers: {
-              "Content-Type": "application/vnd.apple.mpegurl",
-              "Access-Control-Allow-Origin": "*",
-            },
-            body: cleaned,
-          };
+          const body = rebuildPlaylist(cleaned.parsed, cleaned.baseUrl);
+          cacheSet(target, body);
+          return { statusCode: 200, headers: okHeaders, body };
         }
 
-        // 拉取失败（罕见）-> 兜底重定向到原始/子列表地址
-        return redirect(mediaUrl);
+        // 分析失败（例如非标准列表）-> 原样透传（绝对化分片）
+        const body = absolutizePlaylistText(mediaText, mediaBase);
+        cacheSet(target, body);
+        return { statusCode: 200, headers: okHeaders, body };
       } catch (e) {
-        return { statusCode: 500, headers: { "Content-Type": "text/plain" }, body: "proxy error" };
+        console.info("[AdFilterProxy] handler error:", e);
+        return passthrough(target);
       }
     });
   }

@@ -66,31 +66,31 @@ class TCPHttpServer {
     }
   }
 
-  private formatHttpResponse(response: HttpResponse): string {
+  private formatHttpResponse(response: HttpResponse): Buffer {
     const statusTexts: { [key: number]: string } = {
       200: 'OK',
+      302: 'Found',
       400: 'Bad Request',
       404: 'Not Found',
       500: 'Internal Server Error'
     };
 
     const statusText = statusTexts[response.statusCode] || 'Unknown';
-    const headers = {
-      'Content-Length': new TextEncoder().encode(response.body).length.toString(),
+    const bodyBuf = Buffer.from(response.body ?? '', 'utf8');
+    const headers: { [key: string]: string } = {
+      'Content-Length': bodyBuf.length.toString(),
       'Connection': 'close',
       ...response.headers
     };
 
-    let httpResponse = `HTTP/1.1 ${response.statusCode} ${statusText}\r\n`;
-    
+    let head = `HTTP/1.1 ${response.statusCode} ${statusText}\r\n`;
     for (const [key, value] of Object.entries(headers)) {
-      httpResponse += `${key}: ${value}\r\n`;
+      head += `${key}: ${value}\r\n`;
     }
-    
-    httpResponse += '\r\n';
-    httpResponse += response.body;
+    head += '\r\n';
 
-    return httpResponse;
+    // 二进制安全拼接头与体（Buffer.concat），避免中文/大响应被截断导致 unexpected end of stream
+    return Buffer.concat([Buffer.from(head, 'utf8'), bodyBuf]);
   }
 
   public setRequestHandler(handler: RequestHandler) {
@@ -120,39 +120,45 @@ class TCPHttpServer {
           console.log('[TCPHttpServer] Client connected');
           
           let requestData = '';
+          let handled = false;
           
           socket.on('data', async (data: string | Buffer) => {
+            if (handled) return;
             requestData += data.toString();
             
             // Check if we have a complete HTTP request
             if (requestData.includes('\r\n\r\n')) {
+              handled = true;
+              let outBuf: Buffer;
               try {
                 const request = this.parseHttpRequest(requestData);
                 if (request && this.requestHandler) {
                   const response = await this.requestHandler(request);
-                  const httpResponse = this.formatHttpResponse(response);
-                  socket.write(httpResponse);
+                  outBuf = this.formatHttpResponse(response);
                 } else {
-                  // Send 400 Bad Request for malformed requests
-                  const errorResponse = this.formatHttpResponse({
+                  outBuf = this.formatHttpResponse({
                     statusCode: 400,
                     headers: { 'Content-Type': 'text/plain' },
                     body: 'Bad Request'
                   });
-                  socket.write(errorResponse);
                 }
               } catch (error) {
                 console.info('[TCPHttpServer] Error handling request:', error);
-                const errorResponse = this.formatHttpResponse({
+                outBuf = this.formatHttpResponse({
                   statusCode: 500,
                   headers: { 'Content-Type': 'text/plain' },
                   body: 'Internal Server Error'
                 });
-                socket.write(errorResponse);
               }
               
-              socket.end();
               requestData = '';
+              // 写入后立即 end()（Node 语义：会在数据全部发出后发送 FIN，不截断）
+              try {
+                socket.write(outBuf);
+              } catch {}
+              try {
+                socket.end();
+              } catch {}
             }
           });
 

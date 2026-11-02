@@ -62,7 +62,7 @@ interface ParsedPlaylist {
 }
 
 /** 将相对 URI 解析为绝对 URI（避免依赖 RN 不完整的 URL 实现） */
-function absolutize(uri: string, baseUrl: string): string {
+export function absolutize(uri: string, baseUrl: string): string {
   const u = uri.trim();
   if (/^https?:\/\//i.test(u)) return u;
   const m = baseUrl.match(/^(https?:\/\/[^/]+)(\/.*)?$/i);
@@ -232,21 +232,63 @@ export function firstVideoPtsFromTs(buf: ArrayBuffer): number | null {
   return null;
 }
 
-async function fetchArrayBuffer(url: string, signal?: AbortSignal): Promise<ArrayBuffer | null> {
+// 拉取播放列表的超时（ms）。必须远小于播放器(ExoPlayer 默认 ~8s)的连接/读取超时，
+// 否则代理迟迟不回包会让播放器判超时而“一直加载”。
+const MANIFEST_TIMEOUT = 9000;
+// 探测首帧 PTS 只需文件开头若干 KB（PTS 位于首个视频 PES 头，远在 128KB 内）
+const PTS_PROBE_BYTES = 128 * 1024;
+const PTS_PROBE_TIMEOUT = 6000;
+
+/** 带超时的 fetch；失败/超时/外部中止均返回 null，绝不抛出。 */
+async function fetchWithTimeout(
+  url: string,
+  init: any,
+  timeoutMs: number,
+  external?: AbortSignal
+): Promise<Response | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  if (external && typeof (external as any).addEventListener === "function") {
+    if (external.aborted) ctrl.abort();
+    else (external as any).addEventListener("abort", () => ctrl.abort());
+  }
   try {
-    const resp = await fetch(url, { signal });
-    if (!resp.ok) return null;
-    return await resp.arrayBuffer();
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchText(url: string, signal?: AbortSignal): Promise<string | null> {
+  const resp = await fetchWithTimeout(url, {}, MANIFEST_TIMEOUT, signal);
+  if (!resp || !resp.ok) return null;
+  try {
+    return await resp.text();
   } catch {
     return null;
   }
 }
 
-async function fetchText(url: string, signal?: AbortSignal): Promise<string | null> {
+/**
+ * 只取文件开头 maxBytes 字节（HTTP Range）。
+ * 若服务端不支持 Range 会返回 200 全量，此时 arrayBuffer 仍是整段，功能不受影响（只是慢一点）。
+ */
+async function fetchArrayBufferRange(
+  url: string,
+  maxBytes: number,
+  signal?: AbortSignal
+): Promise<ArrayBuffer | null> {
+  const resp = await fetchWithTimeout(
+    url,
+    { headers: { Range: `bytes=0-${maxBytes - 1}` } },
+    PTS_PROBE_TIMEOUT,
+    signal
+  );
+  if (!resp || !resp.ok) return null;
   try {
-    const resp = await fetch(url, { signal });
-    if (!resp.ok) return null;
-    return await resp.text();
+    return await resp.arrayBuffer();
   } catch {
     return null;
   }
@@ -260,7 +302,8 @@ async function probeBlockFirstPts(block: ParsedBlock, signal?: AbortSignal): Pro
   if (block.keyMethod !== "NONE") return null; // 加密块不解密，跳过 PTS 信号
   const first = block.segments[0];
   if (!first) return null;
-  const buf = await fetchArrayBuffer(first.absUri, signal);
+  // 只取前 128KB（Range），避免下载整段（数百 KB~数 MB）导致响应超时
+  const buf = await fetchArrayBufferRange(first.absUri, PTS_PROBE_BYTES, signal);
   if (!buf) return null;
   return firstVideoPtsFromTs(buf);
 }
@@ -274,14 +317,24 @@ export async function analyzePlaylist(
   opts: AdFilterOptions = {},
   signal?: AbortSignal
 ): Promise<{ parsed: ParsedPlaylist; anyAd: boolean; baseUrl: string } | null> {
-  const cfg = { ...DEFAULTS, ...opts };
   const text = await fetchText(playlistUrl, signal);
   if (!text) return null;
+  return analyzePlaylistText(text, playlistUrl, opts, signal);
+}
+
+/** 同 analyzePlaylist，但直接分析已取得的文本（避免重复下载同一列表）。 */
+export async function analyzePlaylistText(
+  text: string,
+  baseUrl: string,
+  opts: AdFilterOptions = {},
+  signal?: AbortSignal
+): Promise<{ parsed: ParsedPlaylist; anyAd: boolean; baseUrl: string } | null> {
+  const cfg = { ...DEFAULTS, ...opts };
   if (!/#EXTINF/.test(text)) return null; // master 或非媒体列表
 
-  const parsed = parsePlaylist(text, playlistUrl);
+  const parsed = parsePlaylist(text, baseUrl);
   if (parsed.blocks.length < 2) {
-    return { parsed, anyAd: false, baseUrl: playlistUrl };
+    return { parsed, anyAd: false, baseUrl };
   }
 
   const { blocks, dominantKey } = parsed;
@@ -296,35 +349,39 @@ export async function analyzePlaylist(
       blockDuration(b) <= cfg.maxAdBlockDuration
   );
 
-  let contentCum = 0;
-  let checked = 0;
-  let anyAd = false;
+  // 需要靠 PTS 判定的候选块（加密状态与正片相同，key 差异判据失效）
+  const needPtsCandidates = candidates.filter((b) => b.keyMethod === dominantKey.method);
 
-  // 基线：从块 0（首个正片块）探测首帧 PTS，抵消 PTS 与 EXTINF 累计时间轴的固定偏移
+  // 并行探测：基线(块0) + 各需判定的候选块首帧 PTS，避免串行累加导致响应超时
+  const ptsMap = new Map<ParsedBlock, number | null>();
   let baseline = 0;
-  if (candidates.length > 0) {
-    const b0pts = await probeBlockFirstPts(blocks[0], signal);
-    if (b0pts !== null) baseline = b0pts;
+  if (needPtsCandidates.length > 0) {
+    const toProbe = [blocks[0], ...needPtsCandidates.slice(0, cfg.maxCandidatesToCheck)];
+    const results = await Promise.all(toProbe.map((b) => probeBlockFirstPts(b, signal)));
+    toProbe.forEach((b, idx) => ptsMap.set(b, results[idx]));
+    const b0 = ptsMap.get(blocks[0]);
+    if (b0 !== null && b0 !== undefined) baseline = b0;
   }
 
+  let contentCum = 0;
+  let anyAd = false;
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
     const dur = blockDuration(b);
 
     let isAd = false;
     if (candidates.includes(b)) {
-      const keyDiff = b.keyMethod !== dominantKey.method;
-      let ptsAnom = false;
-      let pts: number | null = null;
-      if (checked < cfg.maxCandidatesToCheck) {
-        checked++;
-        pts = await probeBlockFirstPts(b, signal);
+      if (b.keyMethod !== dominantKey.method) {
+        // 快路径：加密状态与正片不同 -> 直接判定广告（零下载）
+        isAd = true;
+      } else {
+        // 慢路径：比对首帧 PTS 与累计时间轴（已并行取回）
+        const pts = ptsMap.get(b);
+        if (pts !== null && pts !== undefined) {
+          isAd = Math.abs(pts - (contentCum + baseline)) > cfg.ptsTolerance;
+        }
+        // 未取到 PTS（超时/失败）-> 保守保留，绝不误删正片
       }
-      if (pts !== null) {
-        ptsAnom = Math.abs(pts - (contentCum + baseline)) > cfg.ptsTolerance;
-      }
-      // 主判据：短块 + (PTS 异常 或 key 差异)
-      isAd = ptsAnom || keyDiff;
     }
 
     b.isAd = isAd;
@@ -332,7 +389,7 @@ export async function analyzePlaylist(
     else contentCum += dur;
   }
 
-  return { parsed, anyAd, baseUrl: playlistUrl };
+  return { parsed, anyAd, baseUrl };
 }
 
 /**
@@ -351,7 +408,7 @@ export async function fetchAndFilterPlaylist(
   return rebuildPlaylist(res.parsed, res.baseUrl);
 }
 
-function rebuildPlaylist(parsed: ParsedPlaylist, baseUrl: string): string {
+export function rebuildPlaylist(parsed: ParsedPlaylist, baseUrl: string): string {
   const { headerLines, blocks, dominantKey } = parsed;
   const out: string[] = ["#EXTM3U"];
 
@@ -392,6 +449,14 @@ export async function resolveMediaPlaylistUrl(
 ): Promise<string | null> {
   const text = await fetchText(playlistUrl, signal);
   if (!text) return null;
+  return pickBestMediaUrl(text, playlistUrl);
+}
+
+/**
+ * 同步版本：从已取得的 master 文本中解析最高码率子列表的绝对 URL；
+ * 若文本已是媒体列表或不是 master，返回 null。
+ */
+export function pickBestMediaUrl(text: string, baseUrl: string): string | null {
   if (/#EXTINF/.test(text)) return null; // 已经是媒体列表
   if (!/#EXT-X-STREAM-INF/.test(text)) return null;
 
@@ -409,7 +474,7 @@ export async function resolveMediaPlaylistUrl(
         if (!cand || cand.startsWith("#")) continue;
         if (bw > bestBandwidth) {
           bestBandwidth = bw;
-          bestUri = absolutize(cand, playlistUrl);
+          bestUri = absolutize(cand, baseUrl);
         }
         break;
       }

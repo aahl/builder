@@ -428,12 +428,28 @@ export function rebuildPlaylist(parsed: ParsedPlaylist, baseUrl: string): string
     out.push(`#EXT-X-KEY:METHOD=AES-128,URI="${absKey}",IV=${dominantKey.iv || "0x0"}`);
   }
 
+  // 遍历所有块：剔除广告分片，但在「删除广告块」造成的缺口处保留一条
+  // #EXT-X-DISCONTINUITY，让播放器在拼接点重新同步时间戳/解码器，
+  // 避免视频解码器在时间轴跳变处卡顿（声音不受影响、画面停顿）。
+  let prevSegmentWasDroppedOrDiscontinuity = false;
+  let emitted = false;
   for (const b of blocks) {
-    if (b.isAd) continue;
+    if (b.isAd) {
+      // 广告块：整块丢弃，标记此处存在时间轴断点
+      prevSegmentWasDroppedOrDiscontinuity = true;
+      continue;
+    }
+    // 若上一块是广告(被删)或原始列表在此块前有 DISCONTINUITY，
+    // 且已经输出过分片，则在拼接点插入一条 DISCONTINUITY。
+    if (emitted && (prevSegmentWasDroppedOrDiscontinuity || b.discontinuityBefore)) {
+      out.push("#EXT-X-DISCONTINUITY");
+    }
     for (const seg of b.segments) {
       out.push(`#EXTINF:${seg.duration},`);
       out.push(seg.absUri);
     }
+    emitted = true;
+    prevSegmentWasDroppedOrDiscontinuity = false;
   }
 
   out.push("#EXT-X-ENDLIST");

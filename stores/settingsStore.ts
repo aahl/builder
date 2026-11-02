@@ -7,6 +7,7 @@ interface SettingsState {
   apiBaseUrl: string;
   m3uUrl: string;
   remoteInputEnabled: boolean;
+  adFilterEnabled: boolean;
   videoSource: {
     enabledAll: boolean;
     sources: {
@@ -20,6 +21,7 @@ interface SettingsState {
   setApiBaseUrl: (url: string) => void;
   setM3uUrl: (url: string) => void;
   setRemoteInputEnabled: (enabled: boolean) => void;
+  setAdFilterEnabled: (enabled: boolean) => void;
   saveSettings: () => Promise<void>;
   setVideoSource: (config: { enabledAll: boolean; sources: { [key: string]: boolean } }) => void;
   showModal: () => void;
@@ -31,6 +33,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   m3uUrl: "",
   liveStreamSources: [],
   remoteInputEnabled: false,
+  adFilterEnabled: true,
   isModalVisible: false,
   serverConfig: null,
   videoSource: {
@@ -43,6 +46,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       apiBaseUrl: settings.apiBaseUrl,
       m3uUrl: settings.m3uUrl,
       remoteInputEnabled: settings.remoteInputEnabled || false,
+      adFilterEnabled: settings.adFilterEnabled !== false,
       videoSource: settings.videoSource || {
         enabledAll: true,
         sources: {},
@@ -65,9 +69,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setApiBaseUrl: (url) => set({ apiBaseUrl: url }),
   setM3uUrl: (url) => set({ m3uUrl: url }),
   setRemoteInputEnabled: (enabled) => set({ remoteInputEnabled: enabled }),
+  setAdFilterEnabled: (enabled) => set({ adFilterEnabled: enabled }),
   setVideoSource: (config) => set({ videoSource: config }),
   saveSettings: async () => {
-    const { apiBaseUrl, m3uUrl, remoteInputEnabled, videoSource } = get();
+    const { apiBaseUrl, m3uUrl, remoteInputEnabled, videoSource, adFilterEnabled } = get();
 
     let processedApiBaseUrl = apiBaseUrl.trim();
     if (processedApiBaseUrl.endsWith("/")) {
@@ -93,6 +98,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       m3uUrl,
       remoteInputEnabled,
       videoSource,
+      adFilterEnabled,
     });
     api.setBaseUrl(processedApiBaseUrl);
     // Also update the URL in the state so the input field shows the processed URL

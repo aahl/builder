@@ -34,6 +34,7 @@ export interface AppSettings {
     };
   };
   m3uUrl: string;
+  adFilterEnabled?: boolean;
 }
 
 // --- Helper ---
@@ -281,6 +282,7 @@ export class SettingsManager {
         sources: {},
       },
       m3uUrl: "",
+      adFilterEnabled: true,
     };
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);

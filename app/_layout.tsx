@@ -8,6 +8,7 @@ import Toast from "react-native-toast-message";
 
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useRemoteControlStore } from "@/stores/remoteControlStore";
+import { adFilterProxy } from "@/services/adFilterProxy";
 import LoginModal from "@/components/LoginModal";
 import useAuthStore from "@/stores/authStore";
 
@@ -19,7 +20,7 @@ export default function RootLayout() {
   const [loaded, error] = useFonts({
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
   });
-  const { loadSettings, remoteInputEnabled, apiBaseUrl } = useSettingsStore();
+  const { loadSettings, remoteInputEnabled, apiBaseUrl, adFilterEnabled } = useSettingsStore();
   const { startServer, stopServer } = useRemoteControlStore();
   const { checkLoginStatus } = useAuthStore();
 
@@ -49,6 +50,15 @@ export default function RootLayout() {
       stopServer();
     }
   }, [remoteInputEnabled, startServer, stopServer]);
+
+  // 去广告本地代理：默认开启，按设置启停
+  useEffect(() => {
+    if (adFilterEnabled) {
+      adFilterProxy.start();
+    } else {
+      adFilterProxy.stop();
+    }
+  }, [adFilterEnabled]);
 
   if (!loaded && !error) {
     return null;

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { StyleSheet, TouchableOpacity, BackHandler, AppState, AppStateStatus, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Video, ResizeMode } from "expo-av";
@@ -14,6 +14,8 @@ import useDetailStore from "@/stores/detailStore";
 import { useTVRemoteHandler } from "@/hooks/useTVRemoteHandler";
 import Toast from "react-native-toast-message";
 import usePlayerStore, { selectCurrentEpisode } from "@/stores/playerStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { adFilterProxy } from "@/services/adFilterProxy";
 
 export default function PlayScreen() {
   const videoRef = useRef<Video>(null);
@@ -55,6 +57,33 @@ export default function PlayScreen() {
     loadPlaybackRate,
   } = usePlayerStore();
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
+  const adFilterEnabled = useSettingsStore((s) => s.adFilterEnabled);
+  const [playUrl, setPlayUrl] = useState<string>("");
+
+  // 去广告：确保代理就绪后，把播放地址包装成走本地代理的地址（失败/关闭时回退原始地址）
+  useEffect(() => {
+    let cancelled = false;
+    const rawUrl = currentEpisode?.url || "";
+    (async () => {
+      if (!rawUrl) {
+        if (!cancelled) setPlayUrl("");
+        return;
+      }
+      let wrapped = rawUrl;
+      if (adFilterEnabled) {
+        try {
+          await adFilterProxy.start();
+          wrapped = adFilterProxy.wrap(rawUrl);
+        } catch {
+          wrapped = rawUrl;
+        }
+      }
+      if (!cancelled) setPlayUrl(wrapped);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentEpisode?.url, adFilterEnabled]);
 
   useEffect(() => {
     loadPlaybackRate();
@@ -136,7 +165,7 @@ export default function PlayScreen() {
         <Video
           ref={videoRef}
           style={styles.videoPlayer}
-          source={{ uri: currentEpisode?.url || "" }}
+          source={{ uri: playUrl }}
           posterSource={{ uri: detail?.poster ?? "" }}
           resizeMode={ResizeMode.CONTAIN}
           onPlaybackStatusUpdate={handlePlaybackStatusUpdate}

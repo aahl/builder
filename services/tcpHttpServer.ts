@@ -1,7 +1,7 @@
 import TcpSocket from 'react-native-tcp-socket';
 import NetInfo from '@react-native-community/netinfo';
 
-const PORT = 12346;
+const DEFAULT_PORT = 12346;
 
 interface HttpRequest {
   method: string;
@@ -22,9 +22,11 @@ class TCPHttpServer {
   private server: TcpSocket.Server | null = null;
   private isRunning = false;
   private requestHandler: RequestHandler | null = null;
+  private port: number;
 
-  constructor() {
+  constructor(port: number = DEFAULT_PORT) {
     this.server = null;
+    this.port = port;
   }
 
   private parseHttpRequest(data: string): HttpRequest | null {
@@ -109,7 +111,7 @@ class TCPHttpServer {
 
     if (this.isRunning) {
       console.log('[TCPHttpServer] Server is already running.');
-      return `http://${ipAddress}:${PORT}`;
+      return `http://${ipAddress}:${this.port}`;
     }
 
     return new Promise((resolve, reject) => {
@@ -163,10 +165,10 @@ class TCPHttpServer {
           });
         });
 
-        this.server.listen({ port: PORT, host: '0.0.0.0' }, () => {
-          console.log(`[TCPHttpServer] Server listening on ${ipAddress}:${PORT}`);
+        this.server.listen({ port: this.port, host: '0.0.0.0' }, () => {
+          console.log(`[TCPHttpServer] Server listening on ${ipAddress}:${this.port}`);
           this.isRunning = true;
-          resolve(`http://${ipAddress}:${PORT}`);
+          resolve(`http://${ipAddress}:${this.port}`);
         });
 
         this.server.on('error', (error: Error) => {

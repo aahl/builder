@@ -11,6 +11,7 @@ import { useRemoteControlStore } from "@/stores/remoteControlStore";
 import { APIConfigSection } from "@/components/settings/APIConfigSection";
 import { LiveStreamSection } from "@/components/settings/LiveStreamSection";
 import { RemoteInputSection } from "@/components/settings/RemoteInputSection";
+import { AdFilterSection } from "@/components/settings/AdFilterSection";
 // import { VideoSourceSection } from "@/components/settings/VideoSourceSection";
 import Toast from "react-native-toast-message";
 
@@ -109,6 +110,18 @@ export default function SettingsScreen() {
         />
       ),
       key: "livestream",
+    },
+    {
+      component: (
+        <AdFilterSection
+          onChanged={markAsChanged}
+          onFocus={() => {
+            setCurrentFocusIndex(3);
+            setCurrentSection("adFilter");
+          }}
+        />
+      ),
+      key: "adFilter",
     },
     // {
     //   component: (

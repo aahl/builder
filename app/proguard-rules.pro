@@ -1,0 +1,3 @@
+-keep class ng.anlo.hamitv.** { *; }
+-keep class com.google.protobuf.** { *; }
+-dontwarn com.google.protobuf.**

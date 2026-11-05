@@ -1,0 +1,55 @@
+name: Build APK
+
+on:
+  push:
+    branches:
+      - 'android/hamitv'
+  pull_request:
+    branches:
+      - 'android/hamitv'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Assemble debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        run: ./gradlew --no-daemon testDebugUnitTest
+
+      - name: Assemble debug APK
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Collect APK
+        run: |
+          mkdir -p build-output
+          find app/build/outputs/apk/debug -name '*.apk' -exec cp -v {} build-output/hamitv-debug.apk \;
+          ls -l build-output
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: hamitv-debug
+          path: build-output/hamitv-debug.apk
+          if-no-files-found: error
+          retention-days: 30

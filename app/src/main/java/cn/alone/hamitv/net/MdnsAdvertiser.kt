@@ -40,7 +40,9 @@ class MdnsAdvertiser(
         val info = NsdServiceInfo().apply {
             serviceName = name.take(48)
             serviceType = SERVICE_TYPE
-            setPort(port)
+            // Qualified: NsdServiceInfo exposes a `port` property of its own,
+            // so a bare `port` here would read back the (zero) current value.
+            setPort(this@MdnsAdvertiser.port)
             setAttribute("mac", mac.replace(":", "").lowercase())
             setAttribute("friendly_name", name)
             setAttribute("version", version)

@@ -34,9 +34,29 @@ HA ──ESPHome API(:6053)──►  TV Agent  ──Intent/广播/Binder──
 |---|---|---|
 | M0 | 工程骨架 + 协议分帧 + CI | 完成 |
 | M1 | Web 配置台（配对码 + 会话 + 命令表编辑） | 完成 |
+| M1.5 | 摄像头画中画（Binder）+ 配置台试跑 | 完成 |
 | M2 | ESPHome 会话（Hello/DeviceInfo/ListEntities） | 待办 |
 | M3 | 命令执行 + 实体 + 试跑 | 待办 |
 | M4 | Noise PSK + mDNS | 待办 |
+
+## 摄像头画中画
+
+`com.xiaomi.smarthome.tv` 导出了 `RemoteCameraService`（`exported=true`，无权限要求）。
+真正的 AIDL 接口是 `com.xiaomi.smarthome.camera.panel.remote.ICameraBinder`，
+不是内部包装类 `ITvCameraApi`；用原始 `IBinder.transact` 调用即可，无需 vendored stub：
+
+| code | 方法 |
+|---|---|
+| 1 | `getApiLevel()` |
+| 4 | `getAllCamera(callback)` → `(String, List<CameraInfo>)`，`CameraInfo = (did, roomName)` |
+| 5 | `isExistCameraFloatWindow()` |
+| 7 | `setFloatWindowState(visible, move)` |
+| 8 | `startFloatWindow(did)` |
+| 9 | `closeFloatWindow()` |
+
+配置台里的「摄像头画中画」卡片可以列出账号下的摄像头、打开和关闭画中画；
+对应接口是 `GET /api/pip`、`POST /api/pip/start`、`POST /api/pip/close`。
+实测（2.8.0.2 / apiLevel 2）可正常拉起与关闭预览窗口。
 
 ## 配置台
 
@@ -67,6 +87,7 @@ app/src/main/proto/          api.proto（由 tools/sync_proto.py 从 ESPHome 生
 app/src/main/java/.../esp/   分帧、消息 id、传输层（plaintext 已实现，noise 待补）
 app/src/main/java/.../web/   内嵌配置台（Ktor CIO）+ 配对限流
 app/src/main/java/.../config/ 设置与命令表存储
+app/src/main/java/.../tv/     小米摄像头 Binder 客户端（画中画）
 app/src/main/assets/web/     单页配置界面（无构建）
 tools/sync_proto.py          重新同步 ESPHome proto
 ```

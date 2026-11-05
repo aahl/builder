@@ -10,14 +10,12 @@ import java.io.OutputStream
  *
  * On the wire each frame is:
  *
- *     [indicator: 1 byte][payload length: varint][payload]
+ *     [indicator: 1 byte][body length: varint][message type: varint][body]
  *
- * and the payload itself is:
- *
- *     [message type id: varint][protobuf body]
- *
- * The indicator is 0x00 for plaintext frames and 0x01 for frames protected by
- * the Noise transport (handshake frames are also marked 0x01).
+ * The length covers the protobuf body only; the message type varint sits
+ * between the length and the body and is not counted (see
+ * api_frame_helper_plaintext.cpp in ESPHome). The indicator is 0x00 for
+ * plaintext frames and 0x01 for Noise-protected ones.
  */
 object EspFrame {
 
@@ -27,10 +25,9 @@ object EspFrame {
     data class Frame(val indicator: Int, val typeId: Int, val body: ByteArray)
 
     fun encode(typeId: Int, body: ByteArray, indicator: Int = INDICATOR_PLAINTEXT): ByteArray {
-        val payloadLength = Varint.size(typeId) + body.size
-        val out = ByteArrayOutputStream(1 + Varint.size(payloadLength) + payloadLength)
+        val out = ByteArrayOutputStream(1 + Varint.size(body.size) + Varint.size(typeId) + body.size)
         out.write(indicator)
-        Varint.write(out, payloadLength)
+        Varint.write(out, body.size)
         Varint.write(out, typeId)
         out.write(body)
         return out.toByteArray()
@@ -44,15 +41,21 @@ object EspFrame {
     fun read(input: InputStream): Frame {
         val indicator = input.read()
         if (indicator < 0) throw EOFException("stream closed")
-        val payloadLength = Varint.read(input)
-        val payload = ByteArray(payloadLength)
+        val bodyLength = Varint.read(input)
+        if (bodyLength > MAX_BODY_LENGTH) {
+            throw IllegalStateException("unreasonable body length $bodyLength")
+        }
+        val typeId = Varint.read(input)
+        val body = ByteArray(bodyLength)
         var offset = 0
-        while (offset < payloadLength) {
-            val read = input.read(payload, offset, payloadLength - offset)
+        while (offset < bodyLength) {
+            val read = input.read(body, offset, bodyLength - offset)
             if (read < 0) throw EOFException("stream closed mid-frame")
             offset += read
         }
-        val (typeId, bodyStart) = Varint.decode(payload, 0)
-        return Frame(indicator, typeId, payload.copyOfRange(bodyStart, payloadLength))
+        return Frame(indicator, typeId, body)
     }
+
+    /** Matches the firmware's MAX_MESSAGE_SIZE guard. */
+    private const val MAX_BODY_LENGTH = 2_097_151
 }

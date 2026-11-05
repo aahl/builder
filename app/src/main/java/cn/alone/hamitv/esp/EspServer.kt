@@ -121,6 +121,7 @@ class EspServer(
     private fun acceptLoop(socket: ServerSocket) {
         while (running && !socket.isClosed) {
             val client = runCatching { socket.accept() }.getOrNull() ?: break
+            log("esp: client ${client.inetAddress.hostAddress}")
             val connection = EspConnection(client, this)
             connections.add(connection)
             thread(name = "esp-conn", isDaemon = true) { connection.run() }
@@ -170,10 +171,11 @@ internal class EspConnection(
                     server.log("esp: refusing an encrypted frame on a plaintext session")
                     break
                 }
+                server.log("esp: <- ${frame.typeId} (${frame.body.size}B)")
                 handle(frame.typeId, frame.body)
             }
         } catch (e: Exception) {
-            // Client went away; nothing to report.
+            server.log("esp: session ended: ${e.javaClass.simpleName}: ${e.message}")
         } finally {
             close()
             server.forget(this)

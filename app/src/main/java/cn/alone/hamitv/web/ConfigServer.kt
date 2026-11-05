@@ -3,6 +3,9 @@ package cn.alone.hamitv.web
 import android.content.Context
 import cn.alone.hamitv.config.ConfigStore
 import cn.alone.hamitv.net.localIpv4
+import cn.alone.hamitv.tv.CameraBinder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import io.ktor.http.ContentType
 import io.ktor.http.Cookie
 import io.ktor.http.HttpStatusCode
@@ -39,6 +42,7 @@ class ConfigServer(
 
     private var engine: ApplicationEngine? = null
     private val limiter = PairingLimiter()
+    private val camera = CameraBinder(context.applicationContext)
     private val startedAt = System.currentTimeMillis()
 
     @Synchronized
@@ -126,6 +130,34 @@ class ConfigServer(
                 }
             }
 
+            get("/api/pip") {
+                if (!call.authorized()) return@get
+                call.respond(withContext(Dispatchers.IO) { pipState() })
+            }
+            post("/api/pip/start") {
+                if (!call.authorized()) return@post
+                if (!call.ensureCsrf()) return@post
+                val did = runCatching { call.receive<PipRequest>().did }.getOrDefault("")
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        camera.startFloatWindow(did)
+                        pipState()
+                    }.getOrElse { error -> PipState(available = true, error = error.message) }
+                }
+                call.respond(result)
+            }
+            post("/api/pip/close") {
+                if (!call.authorized()) return@post
+                if (!call.ensureCsrf()) return@post
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        camera.closeFloatWindow()
+                        pipState()
+                    }.getOrElse { error -> PipState(available = true, error = error.message) }
+                }
+                call.respond(result)
+            }
+
             post("/api/code/rotate") {
                 if (!call.authorized()) return@post
                 if (!call.ensureCsrf()) return@post
@@ -170,6 +202,20 @@ class ConfigServer(
             ),
         )
         call.respond(OkResponse())
+    }
+
+    /** Binds to the Xiaomi camera service and reports what it offers. */
+    private fun pipState(): PipState = runCatching {
+        val cameras = camera.cameras()
+        PipState(
+            available = true,
+            apiLevel = camera.apiLevel(),
+            floating = camera.isFloatWindowVisible(),
+            cameras = cameras.map { PipCamera(did = it.did, roomName = it.roomName) },
+        )
+    }.getOrElse { error ->
+        camera.unbind()
+        PipState(available = false, error = error.message ?: error.javaClass.simpleName)
     }
 
     private fun status() = StatusResponse(
@@ -233,6 +279,21 @@ data class StatusResponse(
 
 @Serializable
 data class CodeResponse(val code: String)
+
+@Serializable
+data class PipRequest(val did: String = "")
+
+@Serializable
+data class PipCamera(val did: String, val roomName: String)
+
+@Serializable
+data class PipState(
+    val available: Boolean = false,
+    val apiLevel: Int = 0,
+    val floating: Boolean = false,
+    val cameras: List<PipCamera> = emptyList(),
+    val error: String? = null,
+)
 
 @Serializable
 data class OkResponse(val ok: Boolean = true)

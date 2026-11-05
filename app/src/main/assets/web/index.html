@@ -38,12 +38,12 @@
     color: var(--muted); margin: 0 0 12px; font-weight: 600;
   }
   label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
-  input, textarea {
+  input, textarea, select {
     width: 100%; padding: 10px 12px; border-radius: 8px;
     border: 1px solid var(--line); background: #0b0f13; color: var(--text);
     font: inherit; outline: none;
   }
-  input:focus, textarea:focus { border-color: var(--accent); }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); }
   textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; min-height: 240px; resize: vertical; }
   button {
     border: 0; border-radius: 8px; padding: 10px 16px; font: inherit;
@@ -102,6 +102,18 @@
         <div><label for="espPort">ESPHome 端口</label><input id="espPort" inputmode="numeric"></div>
       </div>
       <div class="row"><button id="save">保存</button></div>
+    </div>
+
+    <div class="card">
+      <h2>摄像头画中画</h2>
+      <div class="sub" id="pipStatus" style="margin:0 0 10px">读取中…</div>
+      <label for="pipCamera">摄像头</label>
+      <select id="pipCamera"></select>
+      <div class="row">
+        <button id="pipStart">打开画中画</button>
+        <button id="pipClose" class="ghost">关闭</button>
+        <button id="pipRefresh" class="ghost">刷新</button>
+      </div>
     </div>
 
     <div class="card">
@@ -185,13 +197,40 @@ async function loadConfig() {
 }
 
 async function loadCommands() {
-  $("commands").value = await api("/api/commands");
+  const data = await api("/api/commands");
+  // The endpoint answers application/json, so fetch parses it into objects.
+  $("commands").value = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function renderPip(info) {
+  const select = $("pipCamera");
+  const previous = select.value;
+  if (info.available) {
+    select.innerHTML = info.cameras.length
+      ? info.cameras.map((c) => `<option value="${escapeHtml(c.did)}">${escapeHtml(c.roomName || c.did)}</option>`).join("")
+      : `<option value="">未发现摄像头</option>`;
+    if (previous) select.value = previous;
+    $("pipStatus").textContent =
+      `已连接 · API ${info.apiLevel} · ${info.cameras.length} 个摄像头 · 画中画${info.floating ? "已打开" : "未打开"}` +
+      (info.error ? ` · 上次操作失败：${info.error}` : "");
+  } else {
+    select.innerHTML = `<option value="">不可用</option>`;
+    $("pipStatus").textContent = "不可用：" + (info.error || "无法连接小米摄像头服务");
+  }
+}
+
+async function loadPip() {
+  renderPip(await api("/api/pip"));
 }
 
 async function boot() {
   try {
     await loadStatus();
-    await Promise.all([loadConfig(), loadCommands()]);
+    await Promise.all([loadConfig(), loadCommands(), loadPip()]);
     showApp();
   } catch (error) {
     if (error.message !== "unauthorized") {
@@ -250,6 +289,35 @@ $("reloadCommands").onclick = async () => {
   try {
     await loadCommands();
     toast("已重新读取");
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
+$("pipStart").onclick = async () => {
+  const did = $("pipCamera").value;
+  if (!did) return toast("没有可用的摄像头", true);
+  try {
+    renderPip(await api("/api/pip/start", { method: "POST", body: JSON.stringify({ did }) }));
+    toast("已发送打开指令");
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
+$("pipClose").onclick = async () => {
+  try {
+    renderPip(await api("/api/pip/close", { method: "POST" }));
+    toast("已关闭画中画");
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
+$("pipRefresh").onclick = async () => {
+  try {
+    await loadPip();
+    toast("已刷新");
   } catch (error) {
     toast(error.message, true);
   }

@@ -81,7 +81,7 @@ class CameraBinder(private val context: Context) {
             it.writeInt(if (move) 1 else 0)
         }
 
-    private fun <T> call(code: Int, write: (Parcel) -> Unit, read: (Parcel) -> T): T {
+    private fun <T> call(code: Int, write: (Parcel) -> Unit = {}, read: (Parcel) -> T): T {
         val remote = ensureBound()
         val data = Parcel.obtain()
         val reply = Parcel.obtain()

@@ -48,8 +48,9 @@ object CommandTable {
         }
     }
 
-    private fun command(obj: JsonObject): CommandSpec? {
-        val id = obj.text("id")?.trim().orEmpty()
+    /** [fallbackId] lets a select option use its display name as the id. */
+    private fun command(obj: JsonObject, fallbackId: String? = null): CommandSpec? {
+        val id = obj.text("id")?.trim().orEmpty().ifEmpty { fallbackId.orEmpty() }
         if (id.isEmpty()) return null
         val type = obj.text("type")?.trim()?.lowercase() ?: "activity"
         val action = obj.text("action")?.trim().orEmpty()
@@ -80,7 +81,7 @@ object CommandTable {
             val name = obj.text("name")?.trim().orEmpty()
             // Option names are the values HA displays and echoes back.
             if (name.isEmpty() || name.length > 255 || !seen.add(name)) return@mapNotNull null
-            SelectOption(name, command(obj)?.copy(id = name) ?: return@mapNotNull null)
+            SelectOption(name, command(obj, fallbackId = name) ?: return@mapNotNull null)
         }
     }
 

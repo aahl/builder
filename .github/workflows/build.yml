@@ -23,9 +23,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
+      # The runner image already ships the Android SDK; installing the extra
+      # packages directly avoids android-actions/setup-android, which still
+      # tries to install the removed "tools" package on newer cmdline-tools.
       - name: Install SDK packages
         run: |
           yes | sdkmanager --licenses > /dev/null 2>&1 || true

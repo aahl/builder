@@ -189,7 +189,7 @@ class EspServer(
         const val API_VERSION_MAJOR = 1
         const val API_VERSION_MINOR = 13
         const val ESPHOME_VERSION = "2025.12.0"
-        const val PROJECT_VERSION = "0.2.0"
+        const val PROJECT_VERSION = "0.1.1-a1"
     }
 }
 

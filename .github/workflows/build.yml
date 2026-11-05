@@ -46,6 +46,18 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Restore stable debug keystore
+        run: |
+          # Without a fixed key every run signs with a fresh ephemeral key and
+          # successive builds cannot be installed over each other.
+          mkdir -p "$HOME/.android"
+          if [ -n "${{ secrets.HAMITV_DEBUG_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.HAMITV_DEBUG_KEYSTORE_BASE64 }}" | base64 -d > "$HOME/.android/debug.keystore"
+            echo "restored $(stat -c%s "$HOME/.android/debug.keystore") bytes"
+          else
+            echo "HAMITV_DEBUG_KEYSTORE_BASE64 missing; signature will change every run"
+          fi
+
       - name: Unit tests
         run: ./gradlew --no-daemon testDebugUnitTest
 

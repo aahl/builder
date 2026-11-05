@@ -24,6 +24,7 @@ class MainActivity : AppCompatActivity() {
             text = getString(R.string.app_name)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 40f)
             setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER_HORIZONTAL
         }
 
         val body = TextView(this).apply {
@@ -34,6 +35,7 @@ class MainActivity : AppCompatActivity() {
             }
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
             setTextColor(Color.parseColor("#B0BEC5"))
+            gravity = Gravity.CENTER_HORIZONTAL
             setPadding(0, 24, 0, 0)
         }
 

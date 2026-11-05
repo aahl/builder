@@ -32,11 +32,13 @@ object CommandTable {
             val obj = element as? JsonObject ?: return@mapNotNull null
             val id = obj.text("id")?.trim().orEmpty()
             val action = obj.text("action")?.trim().orEmpty()
-            if (id.isEmpty() || action.isEmpty()) return@mapNotNull null
+            val type = obj.text("type")?.trim()?.lowercase() ?: "activity"
+            // Camera commands drive the binder and carry no intent action.
+            if (id.isEmpty() || (action.isEmpty() && !type.startsWith("camera"))) return@mapNotNull null
             CommandSpec(
                 id = id,
                 name = obj.text("name")?.takeIf { it.isNotBlank() } ?: id,
-                type = obj.text("type")?.trim()?.lowercase() ?: "activity",
+                type = type,
                 action = action,
                 component = obj.text("component")?.takeIf { it.isNotBlank() },
                 extras = (obj["extras"] as? JsonObject).orEmpty().mapValues { (_, value) ->

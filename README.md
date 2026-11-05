@@ -35,9 +35,28 @@ HA ──ESPHome API(:6053)──►  TV Agent  ──Intent/广播/Binder──
 | M0 | 工程骨架 + 协议分帧 + CI | 完成 |
 | M1 | Web 配置台（配对码 + 会话 + 命令表编辑） | 完成 |
 | M1.5 | 摄像头画中画（Binder）+ 配置台试跑 | 完成 |
-| M2 | ESPHome 会话（Hello/DeviceInfo/ListEntities） | 待办 |
-| M3 | 命令执行 + 实体 + 试跑 | 待办 |
+| M2 | ESPHome 会话 + 实体 + 命令执行 | 完成 |
+| M3 | 更多实体类型（select/camera）+ 试跑接口 | 待办 |
 | M4 | Noise PSK + mDNS | 待办 |
+
+## ESPHome 协议
+
+明文 TCP 6053，`HelloResponse` 上报 API 1.13（对应 ESPHome 2025.12），
+HA 侧零代码即可添加。帧格式：
+
+```
+[0x00][body 长度 varint][消息类型 varint][protobuf body]
+```
+
+**长度只算 body，不含类型 varint**。这一点容易写错：把类型算进长度后，
+`aioesphomeapi` 发来的 HelloRequest 会被截断，握手直接断连。
+
+当前实现的消息：`Hello` / `Authentication` / `DeviceInfo` / `GetTime` / `Ping` /
+`Disconnect` / `ListEntities`（button、text_sensor）/ `SubscribeStates` /
+`ButtonCommandRequest`。
+
+实体由命令表生成，每个命令一个 button，另加 `text_sensor.mitv_last_command`
+记录最后一次执行结果；改命令表会重建实体并主动断开连接，HA 重连后重新拉取列表。
 
 ## 摄像头画中画
 

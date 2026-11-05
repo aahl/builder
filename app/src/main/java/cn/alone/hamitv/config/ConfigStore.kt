@@ -104,6 +104,12 @@ class ConfigStore(context: Context) {
                 "extras": { "from": "com.xiaomi.mitv.smartshare" }
               },
               {
+                "id": "camera_close",
+                "name": "关闭摄像头画中画",
+                "type": "camera_close",
+                "action": ""
+              },
+              {
                 "id": "camera_fullscreen",
                 "name": "摄像头全屏",
                 "type": "activity",

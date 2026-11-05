@@ -2,6 +2,7 @@ package cn.alone.hamitv.web
 
 import android.content.Context
 import cn.alone.hamitv.config.ConfigStore
+import cn.alone.hamitv.esp.EspServer
 import cn.alone.hamitv.net.localIpv4
 import cn.alone.hamitv.tv.CameraBinder
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +39,7 @@ import kotlinx.serialization.json.Json
 class ConfigServer(
     private val context: Context,
     private val store: ConfigStore,
+    private val esp: EspServer? = null,
 ) {
 
     private var engine: ApplicationEngine? = null
@@ -63,6 +65,7 @@ class ConfigServer(
         Thread {
             Thread.sleep(400)
             stop()
+            esp?.restart()
             start()
         }.apply { isDaemon = true }.start()
     }
@@ -124,6 +127,7 @@ class ConfigServer(
                 if (!call.ensureCsrf()) return@put
                 val error = store.writeCommands(call.receiveText())
                 if (error == null) {
+                    esp?.reload()
                     call.respond(OkResponse())
                 } else {
                     call.respond(HttpStatusCode.BadRequest, ErrorResponse(error))
@@ -234,6 +238,9 @@ class ConfigServer(
         uptimeSeconds = (System.currentTimeMillis() - startedAt) / 1000,
         android = android.os.Build.VERSION.RELEASE ?: "?",
         model = android.os.Build.MODEL ?: "?",
+        espRunning = esp?.running ?: false,
+        espConnections = esp?.connectionCount ?: 0,
+        espEntities = esp?.registry?.buttons?.size ?: 0,
     )
 
     private suspend fun ApplicationCall.authorized(): Boolean {
@@ -282,6 +289,9 @@ data class StatusResponse(
     val uptimeSeconds: Long,
     val android: String,
     val model: String,
+    val espRunning: Boolean = false,
+    val espConnections: Int = 0,
+    val espEntities: Int = 0,
 )
 
 @Serializable

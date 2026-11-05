@@ -8,9 +8,12 @@ import android.app.Service
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import cn.alone.hamitv.config.ConfigStore
+import cn.alone.hamitv.esp.EspServer
 import cn.alone.hamitv.net.localIpv4
+import cn.alone.hamitv.tv.CommandExecutor
 import cn.alone.hamitv.web.ConfigServer
 
 /**
@@ -21,14 +24,18 @@ class AgentService : Service() {
 
     private lateinit var store: ConfigStore
     private lateinit var server: ConfigServer
+    private lateinit var esp: EspServer
 
     override fun onCreate() {
         super.onCreate()
         store = ConfigStore(this)
-        server = ConfigServer(this, store)
+        esp = EspServer(this, store, CommandExecutor(this)) { Log.d(TAG, it) }
+        server = ConfigServer(this, store, esp)
         createChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
         server.start()
+        runCatching { esp.start() }
+            .onFailure { Log.e(TAG, "esp server failed to start on ${store.espPort}", it) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -36,6 +43,7 @@ class AgentService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        esp.stop()
         server.stop()
         super.onDestroy()
     }
@@ -70,6 +78,7 @@ class AgentService : Service() {
     }
 
     companion object {
+        private const val TAG = "AgentService"
         private const val CHANNEL_ID = "agent"
         private const val NOTIFICATION_ID = 1
 

@@ -184,6 +184,9 @@ async function loadStatus() {
     ["型号", status.model],
     ["Android", status.android],
     ["ESPHome 端口", status.espPort],
+    ["ESPHome 状态", status.espRunning
+      ? `运行中 · ${status.espConnections} 个连接 · ${status.espEntities} 个按钮`
+      : "未启动"],
     ["配对码", status.pairingCode],
     ["运行时长", Math.floor(status.uptimeSeconds / 60) + " 分钟"],
   ].map(([k, v]) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`).join("");

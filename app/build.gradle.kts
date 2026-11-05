@@ -68,6 +68,7 @@ dependencies {
     implementation("io.ktor:ktor-server-core:2.3.12")
     implementation("io.ktor:ktor-server-cio:2.3.12")
     implementation("io.ktor:ktor-server-content-negotiation:2.3.12")
+    implementation("io.ktor:ktor-server-status-pages:2.3.12")
     implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.12")
 
     implementation("com.google.zxing:core:3.5.3")

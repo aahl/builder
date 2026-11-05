@@ -58,7 +58,7 @@ class CameraBinder(private val context: Context) {
                 return true
             }
         }
-        call(TRANSACTION_GET_ALL_CAMERA) { it.writeStrongBinder(callback) }
+        callVoid(TRANSACTION_GET_ALL_CAMERA) { it.writeStrongBinder(callback) }
         // The service answers synchronously in practice, but never hang the caller.
         latch.await(3, TimeUnit.SECONDS)
         if (latch.count > 0) throw IllegalStateException(message ?: "camera list timed out")
@@ -67,16 +67,16 @@ class CameraBinder(private val context: Context) {
 
     fun startFloatWindow(did: String) {
         require(did.isNotBlank()) { "did is empty" }
-        call(TRANSACTION_START_FLOAT_WINDOW) { it.writeString(did) }
+        callVoid(TRANSACTION_START_FLOAT_WINDOW) { it.writeString(did) }
     }
 
-    fun closeFloatWindow() = call(TRANSACTION_CLOSE_FLOAT_WINDOW) {}
+    fun closeFloatWindow() = callVoid(TRANSACTION_CLOSE_FLOAT_WINDOW) {}
 
     fun isFloatWindowVisible(): Boolean =
         call(TRANSACTION_IS_FLOAT_WINDOW) { it.readInt() != 0 }
 
     fun setFloatWindowState(visible: Boolean, move: Boolean) =
-        call(TRANSACTION_SET_FLOAT_STATE) {
+        callVoid(TRANSACTION_SET_FLOAT_STATE) {
             it.writeInt(if (visible) 1 else 0)
             it.writeInt(if (move) 1 else 0)
         }
@@ -99,7 +99,7 @@ class CameraBinder(private val context: Context) {
         }
     }
 
-    private fun call(code: Int, write: (Parcel) -> Unit) {
+    private fun callVoid(code: Int, write: (Parcel) -> Unit) {
         call(code, write) { }
     }
 

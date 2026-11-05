@@ -58,6 +58,22 @@ HA 侧零代码即可添加。帧格式：
 实体由命令表生成，每个命令一个 button，另加 `text_sensor.mitv_last_command`
 记录最后一次执行结果；改命令表会重建实体并主动断开连接，HA 重连后重新拉取列表。
 
+## 自动发现
+
+用 Android 的 `NsdManager` 广播 `_esphomelib._tcp.local.`，HA 的 zeroconf 流程
+会直接弹出「发现新设备」，不用手输 IP：
+
+```
+name  客厅电视._esphomelib._tcp.local.
+addr  192.168.26.55:6053
+txt   mac=0282bc4f0f95  friendly_name=客厅电视  version=2025.12.0
+      platform=Android  board=MiTV-ANSP0  network=ethernet
+```
+
+`mac` 是必须的（HA 没有它就 abort），并且要和 `DeviceInfoResponse.mac_address`
+一致——两者都由 Android ID 派生。改设备名会重新注册记录；注册失败时配置台
+的「自动发现」一栏会显示未广播。
+
 ## 摄像头画中画
 
 `com.xiaomi.smarthome.tv` 导出了 `RemoteCameraService`（`exported=true`，无权限要求）。

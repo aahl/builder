@@ -19,7 +19,8 @@ HA ──ESPHome API(:6053)──►  TV Agent  ──Intent/广播/Binder──
   HA 侧零代码，设备直接出现在「设置 → 设备与服务」。
 - **配置**：全部通过内嵌 Web 配置台完成。
 - **能力**：`activity` / `service` / `broadcast` 三类命令 + 内置 handler
-  （摄像头画中画 AIDL、启动应用）。不依赖 root，不依赖 Shizuku。
+  （摄像头画中画 AIDL、启动应用）；命令可以按组包成 `select` 实体。
+  不依赖 root，不依赖 Shizuku。
 
 ## 端口
 
@@ -36,8 +37,10 @@ HA ──ESPHome API(:6053)──►  TV Agent  ──Intent/广播/Binder──
 | M1 | Web 配置台（配对码 + 会话 + 命令表编辑） | 完成 |
 | M1.5 | 摄像头画中画（Binder）+ 配置台试跑 | 完成 |
 | M2 | ESPHome 会话 + 实体 + 命令执行 | 完成 |
-| M3 | 更多实体类型（select/camera）+ 试跑接口 | 待办 |
-| M4 | Noise PSK + mDNS | 待办 |
+| M3 | `select` 实体（输入源） | 完成 |
+| M3.5 | `camera` 实体（拉流）+ 配置台试跑接口 | 待办 |
+| M4 | mDNS 自动发现 | 完成 |
+| M4.5 | Noise PSK 加密 | 待办 |
 
 ## ESPHome 协议
 
@@ -52,11 +55,51 @@ HA 侧零代码即可添加。帧格式：
 `aioesphomeapi` 发来的 HelloRequest 会被截断，握手直接断连。
 
 当前实现的消息：`Hello` / `Authentication` / `DeviceInfo` / `GetTime` / `Ping` /
-`Disconnect` / `ListEntities`（button、text_sensor）/ `SubscribeStates` /
-`ButtonCommandRequest`。
+`Disconnect` / `ListEntities`（button、select、text_sensor）/ `SubscribeStates` /
+`ButtonCommandRequest` / `SelectCommandRequest`。
 
 实体由命令表生成，每个命令一个 button，另加 `text_sensor.mitv_last_command`
 记录最后一次执行结果；改命令表会重建实体并主动断开连接，HA 重连后重新拉取列表。
+
+## 命令表
+
+`type` 决定执行方式，`extras` 保留 JSON 类型（`23` 是 int，`"23"` 是字符串，
+两者在 `Intent.putExtra` 里不等价）：
+
+```json
+{ "id": "camera_fullscreen", "name": "摄像头全屏", "type": "activity",
+  "action": "com.yicamera.ACTION_CAMERA_PLAYER",
+  "component": "com.xiaomi.smarthome.tv/....YiCamerasPlayerActivity",
+  "categories": ["android.intent.category.HOME"],
+  "extras": { "did": "", "model": "" } }
+```
+
+`action` 和 `component` 至少有一个；只有 component 也能拉起页面。
+
+### select
+
+`type: "select"` 的条目本身不执行，它的 `options` 才是命令，每个 option 的
+`name` 就是 HA 里可选的值（保持书写顺序，去重，最长 255 字节）：
+
+```json
+{ "id": "input_source", "name": "输入源", "type": "select",
+  "icon": "mdi:video-input-hdmi",
+  "options": [
+    { "name": "主页", "type": "activity",
+      "action": "android.intent.action.MAIN",
+      "categories": ["android.intent.category.HOME"] },
+    { "name": "HDMI 1", "type": "activity",
+      "component": "com.xiaomi.mitv.tvplayer/.ExternalSourceActivity",
+      "extras": { "input": 23 } }
+  ] }
+```
+
+小米电视的信号源走 `ExternalSourceActivity`，`input` 必须是 **int**：
+HDMI1/2/3 = 23/24/25，TV = 1，AV = 2，VGA = 0。
+
+状态只反映「本 App 最后成功切到的值」——用遥控器换台时它并不知道，重启后
+为 unknown（`missing_state`）。命令执行失败不会更新状态，错误留在
+`text_sensor.mitv_last_command` 里。
 
 ## 自动发现
 

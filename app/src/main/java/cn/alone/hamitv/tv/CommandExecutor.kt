@@ -20,18 +20,18 @@ class CommandExecutor(private val context: Context) {
                 context.startActivity(
                     intent(spec).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                 )
-                "started ${spec.action}"
+                "started ${spec.target()}"
             }
             "service" -> {
                 context.startService(intent(spec))
-                "service ${spec.action}"
+                "service ${spec.target()}"
             }
             "broadcast" -> {
                 context.sendBroadcast(intent(spec))
-                "broadcast ${spec.action}"
+                "broadcast ${spec.target()}"
             }
             "camera_pip" -> {
-                val did = spec.extras["did"].orEmpty()
+                val did = spec.extras["did"]?.toString().orEmpty()
                 camera.startFloatWindow(did)
                 "pip $did"
             }
@@ -39,16 +39,35 @@ class CommandExecutor(private val context: Context) {
                 camera.closeFloatWindow()
                 "pip closed"
             }
+            "select" -> throw IllegalArgumentException("select entries run one of their options")
             else -> throw IllegalArgumentException("unknown type ${spec.type}")
         }
     }
 
     private fun intent(spec: CommandSpec): Intent {
-        val intent = Intent(spec.action)
+        // A bare component is a legal target (the Xiaomi player activities are
+        // launched that way), so the action stays unset when the table omits it.
+        val intent = Intent()
+        if (spec.action.isNotEmpty()) intent.action = spec.action
         spec.component?.let { intent.component = component(it) }
-        spec.extras.forEach { (key, value) -> intent.putExtra(key, value) }
+        spec.categories.forEach { intent.addCategory(it) }
+        spec.extras.forEach { (key, value) -> intent.putTypedExtra(key, value) }
         return intent
     }
+
+    /** Keeps the JSON type, so `23` stays an int and `"23"` stays a string. */
+    private fun Intent.putTypedExtra(key: String, value: Any) {
+        when (value) {
+            is Int -> putExtra(key, value)
+            is Boolean -> putExtra(key, value)
+            is Double -> putExtra(key, value)
+            is Float -> putExtra(key, value)
+            is Long -> putExtra(key, value)
+            else -> putExtra(key, value.toString())
+        }
+    }
+
+    private fun CommandSpec.target(): String = action.ifEmpty { component.orEmpty() }
 
     /** Accepts "pkg/.Cls", "pkg/Cls" and a bare "pkg.Cls". */
     private fun component(raw: String): ComponentName {

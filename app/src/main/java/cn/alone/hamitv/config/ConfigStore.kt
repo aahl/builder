@@ -4,6 +4,9 @@ import android.content.Context
 import java.io.File
 import java.security.SecureRandom
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * All persisted agent settings. Small enough that SharedPreferences is enough;
@@ -59,7 +62,28 @@ class ConfigStore(context: Context) {
     }
 
     fun readCommands(): String =
-        if (commandsFile.exists()) commandsFile.readText() else DEFAULT_COMMANDS
+        migrate(if (commandsFile.exists()) commandsFile.readText() else DEFAULT_COMMANDS)
+
+    /**
+     * Older tables have no select entity, so the input source would silently be
+     * missing after an upgrade. Fold the default select in once, then leave the
+     * table alone: from then on the file is the single source of truth.
+     */
+    private fun migrate(raw: String): String {
+        if (prefs.getInt(KEY_COMMANDS_VERSION, 1) >= COMMANDS_VERSION) return raw
+        val array = runCatching { Json.parseToJsonElement(raw) as JsonArray }.getOrNull()
+        if (array != null && array.none { it.isSelect() }) {
+            val merged = JsonArray(listOf(DEFAULT_SELECT) + array).toString()
+            runCatching { commandsFile.writeText(merged) }
+            prefs.edit().putInt(KEY_COMMANDS_VERSION, COMMANDS_VERSION).apply()
+            return merged
+        }
+        prefs.edit().putInt(KEY_COMMANDS_VERSION, COMMANDS_VERSION).apply()
+        return raw
+    }
+
+    private fun kotlinx.serialization.json.JsonElement.isSelect(): Boolean =
+        ((this as? JsonObject)?.get("type") as? JsonPrimitive)?.content == "select"
 
     /** Returns null on success, or a human readable error when the JSON is invalid. */
     fun writeCommands(raw: String): String? {
@@ -86,9 +110,90 @@ class ConfigStore(context: Context) {
         private const val KEY_CODE = "pairing_code"
         private const val KEY_SESSION = "session"
         private const val KEY_SESSION_AT = "session_at"
+        private const val KEY_COMMANDS_VERSION = "commands_version"
+        private const val COMMANDS_VERSION = 2
+
+        private val DEFAULT_SELECT = Json.parseToJsonElement(
+            """
+              {
+                "id": "input_source",
+                "name": "输入源",
+                "type": "select",
+                "icon": "mdi:video-input-hdmi",
+                "options": [
+                  {
+                    "name": "主页",
+                    "type": "activity",
+                    "action": "android.intent.action.MAIN",
+                    "categories": ["android.intent.category.HOME"]
+                  },
+                  {
+                    "name": "HDMI 1",
+                    "type": "activity",
+                    "component": "com.xiaomi.mitv.tvplayer/.ExternalSourceActivity",
+                    "extras": { "input": 23 }
+                  },
+                  {
+                    "name": "HDMI 2",
+                    "type": "activity",
+                    "component": "com.xiaomi.mitv.tvplayer/.ExternalSourceActivity",
+                    "extras": { "input": 24 }
+                  },
+                  {
+                    "name": "HDMI 3",
+                    "type": "activity",
+                    "component": "com.xiaomi.mitv.tvplayer/.ExternalSourceActivity",
+                    "extras": { "input": 25 }
+                  },
+                  {
+                    "name": "数字电视",
+                    "type": "activity",
+                    "component": "com.xiaomi.mitv.tvplayer/.dtmb.DTMBActivity"
+                  }
+                ]
+              }
+            """.trimIndent(),
+        )
 
         private val DEFAULT_COMMANDS = """
             [
+              {
+                "id": "input_source",
+                "name": "输入源",
+                "type": "select",
+                "icon": "mdi:video-input-hdmi",
+                "options": [
+                  {
+                    "name": "主页",
+                    "type": "activity",
+                    "action": "android.intent.action.MAIN",
+                    "categories": ["android.intent.category.HOME"]
+                  },
+                  {
+                    "name": "HDMI 1",
+                    "type": "activity",
+                    "component": "com.xiaomi.mitv.tvplayer/.ExternalSourceActivity",
+                    "extras": { "input": 23 }
+                  },
+                  {
+                    "name": "HDMI 2",
+                    "type": "activity",
+                    "component": "com.xiaomi.mitv.tvplayer/.ExternalSourceActivity",
+                    "extras": { "input": 24 }
+                  },
+                  {
+                    "name": "HDMI 3",
+                    "type": "activity",
+                    "component": "com.xiaomi.mitv.tvplayer/.ExternalSourceActivity",
+                    "extras": { "input": 25 }
+                  },
+                  {
+                    "name": "数字电视",
+                    "type": "activity",
+                    "component": "com.xiaomi.mitv.tvplayer/.dtmb.DTMBActivity"
+                  }
+                ]
+              },
               {
                 "id": "show_panel",
                 "name": "控制中心",

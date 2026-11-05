@@ -4,6 +4,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
 
 /**
  * One entry of the editable command table.
@@ -11,15 +14,25 @@ import kotlinx.serialization.json.JsonPrimitive
  * `type` selects the executor:
  *  - activity / service / broadcast: build an Intent and fire it
  *  - camera_pip / camera_close: drive the Xiaomi camera binder
+ *  - select: not executed directly; it becomes a select entity whose
+ *    [options] are commands, one per selectable value
  */
 data class CommandSpec(
     val id: String,
     val name: String,
     val type: String,
-    val action: String,
+    val action: String = "",
     val component: String? = null,
-    val extras: Map<String, String> = emptyMap(),
-)
+    val icon: String? = null,
+    val categories: List<String> = emptyList(),
+    val extras: Map<String, Any> = emptyMap(),
+    val options: List<SelectOption> = emptyList(),
+) {
+    val isSelect: Boolean get() = type == "select"
+}
+
+/** A selectable value and the command it runs. [name] is the value HA shows. */
+data class SelectOption(val name: String, val spec: CommandSpec)
 
 object CommandTable {
 
@@ -30,23 +43,69 @@ object CommandTable {
         val root = runCatching { json.parseToJsonElement(raw) }.getOrNull() as? JsonArray ?: return emptyList()
         return root.mapNotNull { element ->
             val obj = element as? JsonObject ?: return@mapNotNull null
-            val id = obj.text("id")?.trim().orEmpty()
-            val action = obj.text("action")?.trim().orEmpty()
-            val type = obj.text("type")?.trim()?.lowercase() ?: "activity"
-            // Camera commands drive the binder and carry no intent action.
-            if (id.isEmpty() || (action.isEmpty() && !type.startsWith("camera"))) return@mapNotNull null
-            CommandSpec(
-                id = id,
-                name = obj.text("name")?.takeIf { it.isNotBlank() } ?: id,
-                type = type,
-                action = action,
-                component = obj.text("component")?.takeIf { it.isNotBlank() },
-                extras = (obj["extras"] as? JsonObject).orEmpty().mapValues { (_, value) ->
-                    (value as? JsonPrimitive)?.content ?: value.toString()
-                },
-            )
+            // A select without values has nothing to show.
+            command(obj)?.takeIf { spec -> !spec.isSelect || spec.options.isNotEmpty() }
+        }
+    }
+
+    private fun command(obj: JsonObject): CommandSpec? {
+        val id = obj.text("id")?.trim().orEmpty()
+        if (id.isEmpty()) return null
+        val type = obj.text("type")?.trim()?.lowercase() ?: "activity"
+        val action = obj.text("action")?.trim().orEmpty()
+        val component = obj.text("component")?.trim()?.takeIf { it.isNotBlank() }
+        // Camera commands drive the binder, select entries are containers:
+        // both may carry neither action nor component.
+        val needsTarget = type != "select" && !type.startsWith("camera")
+        if (action.isEmpty() && component == null && needsTarget) return null
+
+        return CommandSpec(
+            id = id,
+            name = obj.text("name")?.takeIf { it.isNotBlank() } ?: id,
+            type = type,
+            action = action,
+            component = component,
+            icon = obj.text("icon")?.trim()?.takeIf { it.isNotBlank() },
+            categories = obj.strings("categories"),
+            extras = obj.extras(),
+            options = if (type == "select") obj.selectOptions() else emptyList(),
+        )
+    }
+
+    private fun JsonObject.selectOptions(): List<SelectOption> {
+        val array = this["options"] as? JsonArray ?: return emptyList()
+        val seen = mutableSetOf<String>()
+        return array.mapNotNull { element ->
+            val obj = element as? JsonObject ?: return@mapNotNull null
+            val name = obj.text("name")?.trim().orEmpty()
+            // Option names are the values HA displays and echoes back.
+            if (name.isEmpty() || name.length > 255 || !seen.add(name)) return@mapNotNull null
+            SelectOption(name, command(obj)?.copy(id = name) ?: return@mapNotNull null)
         }
     }
 
     private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.content
+
+    private fun JsonObject.strings(key: String): List<String> =
+        (this[key] as? JsonArray).orEmpty()
+            .mapNotNull { (it as? JsonPrimitive)?.content?.takeIf { value -> value.isNotBlank() } }
+
+    /**
+     * JSON types are preserved on purpose: `{"input": 23}` becomes an int extra,
+     * `{"input": "23"}` a string one. Xiaomi's ExternalSourceActivity only reads
+     * the int, so collapsing everything to strings silently breaks it.
+     */
+    private fun JsonObject.extras(): Map<String, Any> =
+        (this["extras"] as? JsonObject).orEmpty().mapNotNull { (key, value) ->
+            val primitive = value as? JsonPrimitive ?: return@mapNotNull null
+            key to primitive.value()
+        }.toMap()
+
+    private fun JsonPrimitive.value(): Any = when {
+        isString -> content
+        booleanOrNull != null -> booleanOrNull!!
+        intOrNull != null -> intOrNull!!
+        doubleOrNull != null -> doubleOrNull!!
+        else -> content
+    }
 }

@@ -14,10 +14,14 @@ import cn.alone.hamitv.esp.proto.HelloRequest
 import cn.alone.hamitv.esp.proto.HelloResponse
 import cn.alone.hamitv.esp.proto.ListEntitiesButtonResponse
 import cn.alone.hamitv.esp.proto.ListEntitiesDoneResponse
+import cn.alone.hamitv.esp.proto.ListEntitiesSelectResponse
 import cn.alone.hamitv.esp.proto.ListEntitiesTextSensorResponse
 import cn.alone.hamitv.esp.proto.PingResponse
+import cn.alone.hamitv.esp.proto.SelectCommandRequest
+import cn.alone.hamitv.esp.proto.SelectStateResponse
 import cn.alone.hamitv.esp.proto.TextSensorStateResponse
 import cn.alone.hamitv.tv.CommandExecutor
+import cn.alone.hamitv.tv.CommandSpec
 import cn.alone.hamitv.tv.CommandTable
 import java.io.BufferedInputStream
 import java.io.OutputStream
@@ -26,6 +30,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.security.MessageDigest
 import java.util.TimeZone
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
 
@@ -58,6 +63,9 @@ class EspServer(
         private set
 
     private val connections = CopyOnWriteArrayList<EspConnection>()
+
+    /** Last option picked per select key. Empty until HA picks one. */
+    private val selectStates = ConcurrentHashMap<Int, String>()
     private val mac: String by lazy { deriveMac() }
 
     @Volatile
@@ -81,7 +89,7 @@ class EspServer(
         running = true
         registry = EntityRegistry(CommandTable.parse(store.readCommands()))
         thread(name = "esp-accept", isDaemon = true) { acceptLoop(socket) }
-        log("esp: listening on ${store.espPort}, ${registry.buttons.size} buttons")
+        log("esp: listening on ${store.espPort}, ${registry.buttons.size} buttons, ${registry.selects.size} selects")
         advertise()
     }
 
@@ -109,7 +117,7 @@ class EspServer(
         connections.forEach { it.close() }
         // The advertised name is the device name, so a rename needs a new record.
         if (store.deviceName != advertisedName) advertise()
-        log("esp: reloaded, ${registry.buttons.size} buttons")
+        log("esp: reloaded, ${registry.buttons.size} buttons, ${registry.selects.size} selects")
     }
 
     private fun advertise() {
@@ -135,12 +143,21 @@ class EspServer(
 
     internal fun macAddress(): String = mac
 
-    internal fun execute(button: ButtonEntity): String {
-        val result = executor.run(button.command)
-        return result.fold(
-            onSuccess = { "${button.command.name}: $it" },
-            onFailure = { "${button.command.name}: ${it.message ?: it.javaClass.simpleName}" },
-        )
+    internal fun execute(button: ButtonEntity): String = describe(button.command, run(button.command))
+
+    internal fun run(spec: CommandSpec): Result<String> = executor.run(spec)
+
+    internal fun describe(spec: CommandSpec, result: Result<String>): String = result.fold(
+        onSuccess = { "${spec.name}: $it" },
+        onFailure = { "${spec.name}: ${it.message ?: it.javaClass.simpleName}" },
+    )
+
+    internal fun selectState(key: Int): String? = selectStates[key]
+
+    /** Records the pick and mirrors it to every subscribed connection. */
+    internal fun publishSelect(select: SelectEntity, option: String) {
+        selectStates[select.key] = option
+        connections.forEach { it.pushSelectState(select, option) }
     }
 
     internal fun forget(connection: EspConnection) {
@@ -172,7 +189,7 @@ class EspServer(
         const val API_VERSION_MAJOR = 1
         const val API_VERSION_MINOR = 13
         const val ESPHOME_VERSION = "2025.12.0"
-        const val PROJECT_VERSION = "0.1.0"
+        const val PROJECT_VERSION = "0.2.0"
     }
 }
 
@@ -243,6 +260,7 @@ internal class EspConnection(
             EspMessageId.SUBSCRIBE_STATES_REQUEST -> {
                 subscribed = true
                 pushLastCommand(server.lastCommand)
+                server.registry.selects.forEach { pushSelectState(it, server.selectState(it.key)) }
             }
             EspMessageId.PING_REQUEST -> send(
                 EspMessageId.PING_RESPONSE,
@@ -253,6 +271,7 @@ internal class EspConnection(
                 close()
             }
             EspMessageId.BUTTON_COMMAND_REQUEST -> onButton(body)
+            EspMessageId.SELECT_COMMAND_REQUEST -> onSelect(body)
             EspMessageId.GET_TIME_REQUEST -> send(
                 EspMessageId.GET_TIME_RESPONSE,
                 GetTimeResponse.newBuilder()
@@ -305,7 +324,20 @@ internal class EspConnection(
                     .setObjectId(button.objectId)
                     .setKey(button.key)
                     .setName(button.name)
-                    .setIcon("mdi:remote")
+                    .setIcon(button.icon)
+                    .build()
+                    .toByteArray(),
+            )
+        }
+        registry.selects.forEach { select ->
+            send(
+                EspMessageId.LIST_ENTITIES_SELECT_RESPONSE,
+                ListEntitiesSelectResponse.newBuilder()
+                    .setObjectId(select.objectId)
+                    .setKey(select.key)
+                    .setName(select.name)
+                    .setIcon(select.icon)
+                    .addAllOptions(select.options)
                     .build()
                     .toByteArray(),
             )
@@ -335,6 +367,41 @@ internal class EspConnection(
             return
         }
         server.publishLastCommand(server.execute(button))
+    }
+
+    private fun onSelect(body: ByteArray) {
+        val request = SelectCommandRequest.parseFrom(body)
+        val select = server.registry.select(request.key)
+        if (select == null) {
+            server.log("esp: unknown select key ${request.key}")
+            return
+        }
+        val command = select.commands[request.state]
+        if (command == null) {
+            // HA should only send values we advertised; answer with the truth.
+            server.log("esp: '${request.state}' is not an option of ${select.objectId}")
+            pushSelectState(select, server.selectState(select.key))
+            return
+        }
+        val result = server.run(command)
+        server.publishLastCommand(server.describe(command, result))
+        // A failed launch must not leave HA showing a source the TV never switched to.
+        if (result.isSuccess) {
+            server.publishSelect(select, request.state)
+        } else {
+            pushSelectState(select, server.selectState(select.key))
+        }
+    }
+
+    fun pushSelectState(select: SelectEntity, option: String?) {
+        if (!subscribed) return
+        val builder = SelectStateResponse.newBuilder().setKey(select.key)
+        if (option == null) {
+            builder.setMissingState(true)
+        } else {
+            builder.setState(option)
+        }
+        send(EspMessageId.SELECT_STATE_RESPONSE, builder.build().toByteArray())
     }
 
     private fun send(typeId: Int, body: ByteArray) {

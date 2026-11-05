@@ -47,7 +47,21 @@ APK 由 GitHub Actions 构建，推送 `android/hamitv` 分支即触发，
 ## 目录
 
 ```
-app/src/main/proto/         vendored ESPHome api.proto + api_options.proto
-app/src/main/java/.../esp/  分帧与传输层（plaintext 已实现，noise 待补）
+app/src/main/proto/         api.proto（由 tools/sync_proto.py 从 ESPHome 生成）
+app/src/main/java/.../esp/  分帧、消息 id、传输层（plaintext 已实现，noise 待补）
 app/src/main/java/.../net/  网络工具
+tools/sync_proto.py         重新同步 ESPHome proto
+```
+
+## 关于 proto
+
+ESPHome 的 `api.proto` 依赖 `api_options.proto` → `google/protobuf/descriptor.proto`，
+而 Maven 的 protoc 不带 well-known types，直接编译会失败。因此
+`tools/sync_proto.py` 会剥掉 service 块与全部自定义 option，只保留消息定义，
+并把 `(id)` 提取成 `EspMessageId.kt`。字段编号和类型保持原样，线格式不受影响。
+
+重新同步：
+
+```bash
+python3 tools/sync_proto.py /path/to/esphome/components/api/api.proto
 ```

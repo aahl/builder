@@ -97,13 +97,6 @@ class ConfigStore(context: Context) {
                 "component": "com.xiaomi.mitv.smartpanel/.SmartPanelService"
               },
               {
-                "id": "exit_pip",
-                "name": "关闭画中画",
-                "type": "broadcast",
-                "action": "com.xiaomi.mitv.intent.EXIT_CURRENT_PIP",
-                "extras": { "from": "com.xiaomi.mitv.smartshare" }
-              },
-              {
                 "id": "camera_close",
                 "name": "关闭摄像头画中画",
                 "type": "camera_close",

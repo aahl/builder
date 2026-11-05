@@ -112,9 +112,12 @@ class ConfigServer(
                 if (!call.ensureCsrf()) return@put
                 val payload = call.receive<ConfigPayload>()
                 val portChanged = payload.webPort != store.webPort
+                val previousName = store.deviceName
                 store.deviceName = payload.deviceName.take(32).ifBlank { "MiTV" }
                 store.espPort = payload.espPort.coerceIn(1024, 65535)
                 if (portChanged) store.webPort = payload.webPort.coerceIn(1024, 65535)
+                // A rename changes the mDNS record and the advertised node name.
+                if (store.deviceName != previousName) esp?.reload()
                 call.respond(ConfigResult(restartRequired = portChanged))
             }
 
@@ -241,6 +244,7 @@ class ConfigServer(
         espRunning = esp?.running ?: false,
         espConnections = esp?.connectionCount ?: 0,
         espEntities = esp?.registry?.buttons?.size ?: 0,
+        mdnsRegistered = esp?.mdnsRegistered ?: false,
     )
 
     private suspend fun ApplicationCall.authorized(): Boolean {
@@ -292,6 +296,7 @@ data class StatusResponse(
     val espRunning: Boolean = false,
     val espConnections: Int = 0,
     val espEntities: Int = 0,
+    val mdnsRegistered: Boolean = false,
 )
 
 @Serializable

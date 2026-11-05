@@ -187,6 +187,7 @@ async function loadStatus() {
     ["ESPHome 状态", status.espRunning
       ? `运行中 · ${status.espConnections} 个连接 · ${status.espEntities} 个按钮`
       : "未启动"],
+    ["自动发现", status.mdnsRegistered ? "已广播（HA 可自动发现）" : "未广播"],
     ["配对码", status.pairingCode],
     ["运行时长", Math.floor(status.uptimeSeconds / 60) + " 分钟"],
   ].map(([k, v]) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`).join("");

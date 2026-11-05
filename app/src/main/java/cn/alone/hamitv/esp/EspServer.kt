@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.provider.Settings
 import cn.alone.hamitv.config.ConfigStore
+import cn.alone.hamitv.net.MdnsAdvertiser
 import cn.alone.hamitv.esp.proto.AuthenticationResponse
 import cn.alone.hamitv.esp.proto.ButtonCommandRequest
 import cn.alone.hamitv.esp.proto.DeviceInfoResponse
@@ -59,7 +60,15 @@ class EspServer(
     private val connections = CopyOnWriteArrayList<EspConnection>()
     private val mac: String by lazy { deriveMac() }
 
+    @Volatile
+    private var mdns: MdnsAdvertiser? = null
+
+    @Volatile
+    private var advertisedName: String = ""
+
     val connectionCount: Int get() = connections.size
+
+    val mdnsRegistered: Boolean get() = mdns?.registered ?: false
 
     @Synchronized
     fun start() {
@@ -73,6 +82,7 @@ class EspServer(
         registry = EntityRegistry(CommandTable.parse(store.readCommands()))
         thread(name = "esp-accept", isDaemon = true) { acceptLoop(socket) }
         log("esp: listening on ${store.espPort}, ${registry.buttons.size} buttons")
+        advertise()
     }
 
     @Synchronized
@@ -82,6 +92,9 @@ class EspServer(
         server = null
         connections.forEach { it.close() }
         connections.clear()
+        mdns?.stop()
+        mdns = null
+        advertisedName = ""
     }
 
     @Synchronized
@@ -94,7 +107,23 @@ class EspServer(
     fun reload() {
         registry = EntityRegistry(CommandTable.parse(store.readCommands()))
         connections.forEach { it.close() }
+        // The advertised name is the device name, so a rename needs a new record.
+        if (store.deviceName != advertisedName) advertise()
         log("esp: reloaded, ${registry.buttons.size} buttons")
+    }
+
+    private fun advertise() {
+        if (!running) return
+        mdns?.stop()
+        advertisedName = store.deviceName
+        mdns = MdnsAdvertiser(
+            context = context,
+            name = store.deviceName,
+            port = store.espPort,
+            mac = mac,
+            version = ESPHOME_VERSION,
+            log = log,
+        ).also { it.start() }
     }
 
     fun publishLastCommand(text: String) {

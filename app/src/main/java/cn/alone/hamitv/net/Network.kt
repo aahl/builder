@@ -1,4 +1,4 @@
-package ng.anlo.hamitv.net
+package cn.alone.hamitv.net
 
 import java.net.Inet4Address
 import java.net.NetworkInterface

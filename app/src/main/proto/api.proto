@@ -6,7 +6,7 @@ syntax = "proto3";
 // Custom ESPHome options have been stripped so stock protoc can compile this
 // file; the message ids they carried are emitted to EspMessageId.kt instead.
 
-option java_package = "ng.anlo.hamitv.esp.proto";
+option java_package = "cn.alone.hamitv.esp.proto";
 option java_multiple_files = true;
 // ==================== BASE PACKETS ====================
 

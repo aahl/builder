@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HA MiTV</title>
+<style>
+  :root {
+    --bg: #0e1216;
+    --panel: #161c22;
+    --line: #232c34;
+    --text: #e6edf3;
+    --muted: #8b9aa7;
+    --accent: #4c9aff;
+    --danger: #f0616d;
+    --ok: #3fb950;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
+    padding: 20px 16px 48px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: .02em; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+  .card h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); margin: 0 0 12px; font-weight: 600;
+  }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input, textarea {
+    width: 100%; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid var(--line); background: #0b0f13; color: var(--text);
+    font: inherit; outline: none;
+  }
+  input:focus, textarea:focus { border-color: var(--accent); }
+  textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; min-height: 240px; resize: vertical; }
+  button {
+    border: 0; border-radius: 8px; padding: 10px 16px; font: inherit;
+    font-weight: 600; cursor: pointer; background: var(--accent); color: #fff;
+  }
+  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+  .kv { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .kv:last-child { border-bottom: 0; }
+  .kv span:first-child { color: var(--muted); }
+  .code {
+    font-size: 44px; letter-spacing: .3em; text-align: center;
+    font-family: ui-monospace, Menlo, monospace; margin: 10px 0 4px;
+  }
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: #1f2933; border: 1px solid var(--line); color: var(--text);
+    padding: 10px 16px; border-radius: 10px; font-size: 14px;
+    opacity: 0; pointer-events: none; transition: opacity .2s;
+  }
+  .toast.show { opacity: 1; }
+  .toast.err { border-color: var(--danger); color: #ffd7da; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div id="login" class="hidden">
+    <h1>HA MiTV</h1>
+    <div class="sub">输入电视屏幕上显示的 4 位配对码</div>
+    <div class="card">
+      <input id="code" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="0000"
+             style="text-align:center;font-size:32px;letter-spacing:.4em;font-family:ui-monospace,Menlo,monospace">
+      <div class="row"><button id="pair">连接</button></div>
+    </div>
+  </div>
+
+  <div id="app" class="hidden">
+    <h1>HA MiTV</h1>
+    <div class="sub" id="subtitle">—</div>
+
+    <div class="card">
+      <h2>状态</h2>
+      <div id="status"></div>
+    </div>
+
+    <div class="card">
+      <h2>设备</h2>
+      <label for="name">名称</label>
+      <input id="name" maxlength="32">
+      <div class="grid">
+        <div><label for="webPort">配置台端口</label><input id="webPort" inputmode="numeric"></div>
+        <div><label for="espPort">ESPHome 端口</label><input id="espPort" inputmode="numeric"></div>
+      </div>
+      <div class="row"><button id="save">保存</button></div>
+    </div>
+
+    <div class="card">
+      <h2>命令表</h2>
+      <textarea id="commands" spellcheck="false"></textarea>
+      <div class="row">
+        <button id="saveCommands">保存命令表</button>
+        <button id="reloadCommands" class="ghost">重新读取</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>维护</h2>
+      <div class="row">
+        <button id="rotate" class="ghost">重置配对码</button>
+        <button id="restart" class="ghost">重启服务</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function toast(message, isError) {
+  const el = $("toast");
+  el.textContent = message;
+  el.className = "toast show" + (isError ? " err" : "");
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.className = "toast"; }, 2600);
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    credentials: "same-origin",
+    headers: { "X-Requested-With": "hamitv", "Content-Type": "application/json" },
+    ...options,
+  });
+  if (response.status === 401) {
+    showLogin();
+    throw new Error("unauthorized");
+  }
+  if (!response.ok) {
+    let detail = response.statusText;
+    try { detail = (await response.json()).error || detail; } catch (_) {}
+    throw new Error(detail);
+  }
+  const type = response.headers.get("content-type") || "";
+  return type.includes("json") ? response.json() : response.text();
+}
+
+function showLogin() {
+  $("login").classList.remove("hidden");
+  $("app").classList.add("hidden");
+}
+
+function showApp() {
+  $("login").classList.add("hidden");
+  $("app").classList.remove("hidden");
+}
+
+async function loadStatus() {
+  const status = await api("/api/status");
+  $("subtitle").textContent = `${status.name} · ${status.ip}:${status.webPort}`;
+  $("status").innerHTML = [
+    ["型号", status.model],
+    ["Android", status.android],
+    ["ESPHome 端口", status.espPort],
+    ["配对码", status.pairingCode],
+    ["运行时长", Math.floor(status.uptimeSeconds / 60) + " 分钟"],
+  ].map(([k, v]) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`).join("");
+}
+
+async function loadConfig() {
+  const config = await api("/api/config");
+  $("name").value = config.deviceName;
+  $("webPort").value = config.webPort;
+  $("espPort").value = config.espPort;
+}
+
+async function loadCommands() {
+  $("commands").value = await api("/api/commands");
+}
+
+async function boot() {
+  try {
+    await loadStatus();
+    await Promise.all([loadConfig(), loadCommands()]);
+    showApp();
+  } catch (error) {
+    if (error.message !== "unauthorized") {
+      toast(error.message, true);
+      showLogin();
+    }
+  }
+}
+
+$("pair").onclick = async () => {
+  const code = $("code").value.trim();
+  if (!/^\d{4}$/.test(code)) return toast("请输入 4 位数字", true);
+  $("pair").disabled = true;
+  try {
+    await api("/api/pair", { method: "POST", body: JSON.stringify({ code }) });
+    $("code").value = "";
+    await boot();
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    $("pair").disabled = false;
+  }
+};
+
+$("code").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") $("pair").click();
+});
+
+$("save").onclick = async () => {
+  try {
+    const result = await api("/api/config", {
+      method: "PUT",
+      body: JSON.stringify({
+        deviceName: $("name").value.trim(),
+        webPort: Number($("webPort").value),
+        espPort: Number($("espPort").value),
+      }),
+    });
+    toast(result.restartRequired ? "已保存，端口变更需重启服务" : "已保存");
+    if (result.restartRequired) await loadStatus();
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
+$("saveCommands").onclick = async () => {
+  try {
+    await api("/api/commands", { method: "PUT", body: $("commands").value });
+    toast("命令表已保存");
+  } catch (error) {
+    toast("保存失败：" + error.message, true);
+  }
+};
+
+$("reloadCommands").onclick = async () => {
+  try {
+    await loadCommands();
+    toast("已重新读取");
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
+$("rotate").onclick = async () => {
+  try {
+    const result = await api("/api/code/rotate", { method: "POST" });
+    toast("新配对码：" + result.code);
+    showLogin();
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
+$("restart").onclick = async () => {
+  try {
+    await api("/api/restart", { method: "POST" });
+    toast("服务重启中，稍后刷新页面");
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
+boot();
+</script>
+</body>
+</html>

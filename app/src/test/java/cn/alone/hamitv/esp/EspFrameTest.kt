@@ -1,4 +1,4 @@
-package ng.anlo.hamitv.esp
+package cn.alone.hamitv.esp
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals

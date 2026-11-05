@@ -1,15 +1,16 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.protobuf")
 }
 
 android {
-    namespace = "ng.anlo.hamitv"
+    namespace = "cn.alone.hamitv"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "ng.anlo.hamitv"
+        applicationId = "cn.alone.hamitv"
         minSdk = 28
         targetSdk = 34
         versionCode = 1
@@ -37,6 +38,8 @@ android {
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        resources.excludes += "/META-INF/INDEX.LIST"
+        resources.excludes += "/META-INF/io.netty.versions.properties"
     }
 }
 
@@ -59,7 +62,15 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("com.google.protobuf:protobuf-javalite:3.25.3")
+
+    implementation("io.ktor:ktor-server-core:2.3.12")
+    implementation("io.ktor:ktor-server-cio:2.3.12")
+    implementation("io.ktor:ktor-server-content-negotiation:2.3.12")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.12")
+
+    implementation("com.google.zxing:core:3.5.3")
 
     testImplementation("junit:junit:4.13.2")
 }

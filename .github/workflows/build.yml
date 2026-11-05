@@ -54,6 +54,8 @@ jobs:
           if [ -n "${{ secrets.HAMITV_DEBUG_KEYSTORE_BASE64 }}" ]; then
             echo "${{ secrets.HAMITV_DEBUG_KEYSTORE_BASE64 }}" | base64 -d > "$HOME/.android/debug.keystore"
             echo "restored $(stat -c%s "$HOME/.android/debug.keystore") bytes"
+            sha256sum "$HOME/.android/debug.keystore"
+            echo "HAMITV_DEBUG_KEYSTORE=$HOME/.android/debug.keystore" >> "$GITHUB_ENV"
           else
             echo "HAMITV_DEBUG_KEYSTORE_BASE64 missing; signature will change every run"
           fi

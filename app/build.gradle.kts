@@ -17,6 +17,21 @@ android {
         versionName = "0.1.0"
     }
 
+    // Pin the debug signing key to an explicit file when CI provides one,
+    // otherwise AGP silently generates a fresh key on every run and APKs
+    // cannot be installed over each other.
+    val pinnedDebugKey = System.getenv("HAMITV_DEBUG_KEYSTORE")?.let { file(it) }
+    signingConfigs {
+        if (pinnedDebugKey != null && pinnedDebugKey.exists()) {
+            getByName("debug") {
+                storeFile = pinnedDebugKey
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false

@@ -101,7 +101,8 @@ class ConfigServer(
                 )
             }
             put("/api/config") {
-                if (!call.authorized() || !call.hasCsrfHeader()) return@put
+                if (!call.authorized()) return@put
+                if (!call.ensureCsrf()) return@put
                 val payload = call.receive<ConfigPayload>()
                 val portChanged = payload.webPort != store.webPort
                 store.deviceName = payload.deviceName.take(32).ifBlank { "MiTV" }
@@ -115,7 +116,8 @@ class ConfigServer(
                 call.respondText(store.readCommands(), ContentType.Application.Json)
             }
             put("/api/commands") {
-                if (!call.authorized() || !call.hasCsrfHeader()) return@put
+                if (!call.authorized()) return@put
+                if (!call.ensureCsrf()) return@put
                 val error = store.writeCommands(call.receiveText())
                 if (error == null) {
                     call.respond(OkResponse())
@@ -125,13 +127,15 @@ class ConfigServer(
             }
 
             post("/api/code/rotate") {
-                if (!call.authorized() || !call.hasCsrfHeader()) return@post
+                if (!call.authorized()) return@post
+                if (!call.ensureCsrf()) return@post
                 store.clearSession()
                 call.respond(CodeResponse(code = store.rotatePairingCode()))
             }
 
             post("/api/restart") {
-                if (!call.authorized() || !call.hasCsrfHeader()) return@post
+                if (!call.authorized()) return@post
+                if (!call.ensureCsrf()) return@post
                 call.respond(OkResponse())
                 restartAsync()
             }
@@ -185,8 +189,12 @@ class ConfigServer(
         return false
     }
 
-    private fun ApplicationCall.hasCsrfHeader(): Boolean =
-        request.headers[CSRF_HEADER] == "hamitv"
+    /** State changing routes require a header that cross-site forms cannot set. */
+    private suspend fun ApplicationCall.ensureCsrf(): Boolean {
+        if (request.headers[CSRF_HEADER] == "hamitv") return true
+        respond(HttpStatusCode.Forbidden, ErrorResponse("missing csrf header"))
+        return false
+    }
 
     private fun asset(path: String): String =
         context.assets.open(path).bufferedReader().use { it.readText() }

@@ -141,7 +141,7 @@ class ConfigServer(
                 val result = withContext(Dispatchers.IO) {
                     runCatching {
                         camera.startFloatWindow(did)
-                        pipState()
+                        pipState(waitForWindow = true)
                     }.getOrElse { error -> PipState(available = true, error = error.message) }
                 }
                 call.respond(result)
@@ -205,12 +205,19 @@ class ConfigServer(
     }
 
     /** Binds to the Xiaomi camera service and reports what it offers. */
-    private fun pipState(): PipState = runCatching {
+    private fun pipState(waitForWindow: Boolean = false): PipState = runCatching {
         val cameras = camera.cameras()
+        var floating = camera.isFloatWindowVisible()
+        // The window is created asynchronously, so poll briefly after a start.
+        val deadline = System.currentTimeMillis() + 4000
+        while (waitForWindow && !floating && System.currentTimeMillis() < deadline) {
+            Thread.sleep(200)
+            floating = camera.isFloatWindowVisible()
+        }
         PipState(
             available = true,
             apiLevel = camera.apiLevel(),
-            floating = camera.isFloatWindowVisible(),
+            floating = floating,
             cameras = cameras.map { PipCamera(did = it.did, roomName = it.roomName) },
         )
     }.getOrElse { error ->

@@ -23,9 +23,21 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # The runner image already ships the Android SDK; installing the extra
-      # packages directly avoids android-actions/setup-android, which still
-      # tries to install the removed "tools" package on newer cmdline-tools.
+      # The runner image already ships the Android SDK; locating cmdline-tools
+      # manually avoids android-actions/setup-android, which still tries to
+      # install the removed "tools" package on newer cmdline-tools.
+      - name: Set up Android SDK
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          CMDLINE_TOOLS="$(ls -d "$SDK_ROOT"/cmdline-tools/*/bin 2>/dev/null | tail -n 1)"
+          if [ -z "$CMDLINE_TOOLS" ]; then
+            echo "cmdline-tools not found under $SDK_ROOT" >&2
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$CMDLINE_TOOLS" >> "$GITHUB_PATH"
+
       - name: Install SDK packages
         run: |
           yes | sdkmanager --licenses > /dev/null 2>&1 || true

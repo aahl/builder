@@ -105,6 +105,23 @@
     </div>
 
     <div class="card">
+      <h2>加密</h2>
+      <div class="sub" id="noiseStatus" style="margin:0 0 10px">读取中…</div>
+      <label style="display:flex;align-items:center;gap:10px;margin:0 0 4px;color:var(--text)">
+        <input type="checkbox" id="noiseEnabled" style="width:auto;margin:0">
+        <span>启用 Noise 加密（PSK）</span>
+      </label>
+      <label for="psk">预共享密钥（base64，32 字节）</label>
+      <input id="psk" spellcheck="false" autocomplete="off"
+             style="font-family:ui-monospace,Menlo,monospace;font-size:13px">
+      <div class="row">
+        <button id="noiseSave">保存</button>
+        <button id="pskCopy" class="ghost">复制</button>
+        <button id="pskRotate" class="ghost">刷新密钥</button>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>摄像头画中画</h2>
       <div class="sub" id="pipStatus" style="margin:0 0 10px">读取中…</div>
       <label for="pipCamera">摄像头</label>
@@ -200,6 +217,30 @@ async function loadConfig() {
   $("espPort").value = config.espPort;
 }
 
+async function loadNoise() {
+  const noise = await api("/api/noise");
+  $("noiseEnabled").checked = noise.enabled;
+  $("psk").value = noise.psk;
+  renderNoise(noise);
+}
+
+function renderNoise(noise) {
+  $("noiseStatus").textContent = noise.enabled
+    ? `已启用 · ${noise.connections} 个连接 · 改密钥后需同步更新 HA 里的密钥`
+    : "已关闭，API 走明文（仅适合可信内网）";
+}
+
+async function saveNoise(enabled) {
+  const noise = await api("/api/noise", {
+    method: "PUT",
+    body: JSON.stringify({ enabled, psk: $("psk").value.trim() }),
+  });
+  $("noiseEnabled").checked = noise.enabled;
+  $("psk").value = noise.psk;
+  renderNoise(noise);
+  return noise;
+}
+
 async function loadCommands() {
   const data = await api("/api/commands");
   // The endpoint answers application/json, so fetch parses it into objects.
@@ -234,7 +275,7 @@ async function loadPip() {
 async function boot() {
   try {
     await loadStatus();
-    await Promise.all([loadConfig(), loadCommands(), loadPip()]);
+    await Promise.all([loadConfig(), loadCommands(), loadPip(), loadNoise()]);
     showApp();
   } catch (error) {
     if (error.message !== "unauthorized") {
@@ -322,6 +363,46 @@ $("pipRefresh").onclick = async () => {
   try {
     await loadPip();
     toast("已刷新");
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
+$("noiseSave").onclick = async () => {
+  const enabled = $("noiseEnabled").checked;
+  if (enabled && !confirm("启用后 HA 必须填入下面的密钥才能连接，确定吗？")) {
+    $("noiseEnabled").checked = false;
+    return;
+  }
+  try {
+    await saveNoise(enabled);
+    toast(enabled ? "已启用，请把密钥填入 HA" : "已关闭加密");
+    await loadStatus();
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
+$("pskCopy").onclick = async () => {
+  const value = $("psk").value;
+  try {
+    await navigator.clipboard.writeText(value);
+    toast("密钥已复制");
+  } catch (_) {
+    // Clipboard API needs a secure context; the console is plain http.
+    $("psk").select();
+    document.execCommand("copy");
+    toast("密钥已复制");
+  }
+};
+
+$("pskRotate").onclick = async () => {
+  if (!confirm("刷新后旧密钥立即失效，HA 需要重新填新密钥，确定吗？")) return;
+  try {
+    const noise = await api("/api/noise/rotate", { method: "POST" });
+    $("psk").value = noise.psk;
+    renderNoise(noise);
+    toast("已生成新密钥");
   } catch (error) {
     toast(error.message, true);
   }

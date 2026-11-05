@@ -165,6 +165,35 @@ class ConfigServer(
                 call.respond(result)
             }
 
+            get("/api/noise") {
+                if (!call.authorized()) return@get
+                call.respond(noiseState())
+            }
+            put("/api/noise") {
+                if (!call.authorized()) return@put
+                if (!call.ensureCsrf()) return@put
+                val payload = call.receive<NoisePayload>()
+                payload.psk?.let { psk ->
+                    val error = store.setNoisePsk(psk)
+                    if (error != null) {
+                        call.respond(HttpStatusCode.BadRequest, ErrorResponse(error))
+                        return@put
+                    }
+                }
+                store.noiseEnabled = payload.enabled
+                // The listener decides plaintext vs noise per connection, so a
+                // restart is what actually applies the change.
+                esp?.restart()
+                call.respond(noiseState())
+            }
+            post("/api/noise/rotate") {
+                if (!call.authorized()) return@post
+                if (!call.ensureCsrf()) return@post
+                store.rotateNoisePsk()
+                esp?.restart()
+                call.respond(noiseState())
+            }
+
             post("/api/code/rotate") {
                 if (!call.authorized()) return@post
                 if (!call.ensureCsrf()) return@post
@@ -232,6 +261,12 @@ class ConfigServer(
         PipState(available = false, error = error.message ?: error.javaClass.simpleName)
     }
 
+    private fun noiseState() = NoiseResponse(
+        enabled = store.noiseEnabled,
+        psk = store.noisePsk,
+        connections = esp?.connectionCount ?: 0,
+    )
+
     private fun status() = StatusResponse(
         name = store.deviceName,
         ip = localIpv4(),
@@ -245,6 +280,7 @@ class ConfigServer(
         espConnections = esp?.connectionCount ?: 0,
         espEntities = esp?.registry?.buttons?.size ?: 0,
         mdnsRegistered = esp?.mdnsRegistered ?: false,
+        encryption = store.noiseEnabled,
     )
 
     private suspend fun ApplicationCall.authorized(): Boolean {
@@ -297,7 +333,18 @@ data class StatusResponse(
     val espConnections: Int = 0,
     val espEntities: Int = 0,
     val mdnsRegistered: Boolean = false,
+    val encryption: Boolean = false,
 )
+
+@Serializable
+data class NoiseResponse(
+    val enabled: Boolean = false,
+    val psk: String = "",
+    val connections: Int = 0,
+)
+
+@Serializable
+data class NoisePayload(val enabled: Boolean = false, val psk: String? = null)
 
 @Serializable
 data class CodeResponse(val code: String)

@@ -3,6 +3,7 @@ package cn.alone.hamitv.config
 import android.content.Context
 import java.io.File
 import java.security.SecureRandom
+import java.util.Base64
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -29,6 +30,40 @@ class ConfigStore(context: Context) {
     var espPort: Int
         get() = prefs.getInt(KEY_ESP_PORT, DEFAULT_ESP_PORT)
         set(value) = prefs.edit().putInt(KEY_ESP_PORT, value).apply()
+
+    /**
+     * Noise encryption for the ESPHome API. The key is stored base64 encoded
+     * because that is exactly what HA asks the user to paste.
+     */
+    var noiseEnabled: Boolean
+        get() = prefs.getBoolean(KEY_NOISE_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_NOISE_ENABLED, value).apply()
+
+    /** Never empty: the console can always show a key to copy. */
+    val noisePsk: String
+        get() = prefs.getString(KEY_NOISE_PSK, null) ?: rotateNoisePsk()
+
+    fun rotateNoisePsk(): String {
+        val key = ByteArray(32).also(random::nextBytes)
+        val encoded = Base64.getEncoder().encodeToString(key)
+        prefs.edit().putString(KEY_NOISE_PSK, encoded).apply()
+        return encoded
+    }
+
+    /** Returns null when the stored key is not a 32-byte base64 value. */
+    fun noisePskBytes(): ByteArray? = runCatching {
+        Base64.getDecoder().decode(noisePsk)
+    }.getOrNull()?.takeIf { it.size == PSK_BYTES }
+
+    /** Validates a key pasted into the console; returns an error message or null. */
+    fun setNoisePsk(encoded: String): String? {
+        val trimmed = encoded.trim()
+        val bytes = runCatching { Base64.getDecoder().decode(trimmed) }.getOrNull()
+            ?: return "不是合法的 base64"
+        if (bytes.size != PSK_BYTES) return "PSK 必须是 32 字节（base64 后 44 个字符）"
+        prefs.edit().putString(KEY_NOISE_PSK, trimmed).apply()
+        return null
+    }
 
     /** 4 digit pairing code shown on the TV. */
     val pairingCode: String
@@ -110,6 +145,9 @@ class ConfigStore(context: Context) {
         private const val KEY_CODE = "pairing_code"
         private const val KEY_SESSION = "session"
         private const val KEY_SESSION_AT = "session_at"
+        private const val KEY_NOISE_ENABLED = "noise_enabled"
+        private const val KEY_NOISE_PSK = "noise_psk"
+        private const val PSK_BYTES = 32
         private const val KEY_COMMANDS_VERSION = "commands_version"
         private const val COMMANDS_VERSION = 2
 

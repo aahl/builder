@@ -20,6 +20,8 @@ import cn.alone.hamitv.esp.proto.PingResponse
 import cn.alone.hamitv.esp.proto.SelectCommandRequest
 import cn.alone.hamitv.esp.proto.SelectStateResponse
 import cn.alone.hamitv.esp.proto.TextSensorStateResponse
+import cn.alone.hamitv.esp.noise.CipherState
+import cn.alone.hamitv.esp.noise.NoiseHandshake
 import cn.alone.hamitv.tv.CommandExecutor
 import cn.alone.hamitv.tv.CommandSpec
 import cn.alone.hamitv.tv.CommandTable
@@ -89,7 +91,10 @@ class EspServer(
         running = true
         registry = EntityRegistry(CommandTable.parse(store.readCommands()))
         thread(name = "esp-accept", isDaemon = true) { acceptLoop(socket) }
-        log("esp: listening on ${store.espPort}, ${registry.buttons.size} buttons, ${registry.selects.size} selects")
+        log(
+            "esp: listening on ${store.espPort}, ${registry.buttons.size} buttons, " +
+                "${registry.selects.size} selects, encryption ${if (store.noiseEnabled) "on" else "off"}",
+        )
         advertise()
     }
 
@@ -128,7 +133,7 @@ class EspServer(
             context = context,
             name = store.deviceName,
             port = store.espPort,
-            mac = mac,
+            mac = macPlain(),
             version = ESPHOME_VERSION,
             log = log,
         ).also { it.start() }
@@ -142,6 +147,14 @@ class EspServer(
     internal fun deviceName(): String = store.deviceName
 
     internal fun macAddress(): String = mac
+
+    /** Same string as the mDNS TXT record: HA compares it verbatim. */
+    internal fun macPlain(): String = mac.replace(":", "").lowercase()
+
+    internal fun encryptionEnabled(): Boolean = store.noiseEnabled
+
+    /** Null when encryption is off or the stored key is unusable. */
+    internal fun psk(): ByteArray? = store.noisePskBytes()
 
     internal fun execute(button: ButtonEntity): String = describe(button.command, run(button.command))
 
@@ -189,7 +202,7 @@ class EspServer(
         const val API_VERSION_MAJOR = 1
         const val API_VERSION_MINOR = 13
         const val ESPHOME_VERSION = "2025.12.0"
-        const val PROJECT_VERSION = "0.1.1-a1"
+        const val PROJECT_VERSION = "0.1.1-a2"
     }
 }
 
@@ -209,11 +222,27 @@ internal class EspConnection(
     @Volatile
     private var subscribed = false
 
+    @Volatile
+    private var sendCipher: CipherState? = null
+
+    @Volatile
+    private var receiveCipher: CipherState? = null
+
     fun run() {
         try {
+            if (server.encryptionEnabled()) {
+                // Never fall back to plaintext: a broken key must fail closed.
+                val psk = server.psk()
+                if (psk == null) {
+                    server.log("esp: encryption is on but the stored psk is invalid")
+                    return
+                }
+                if (!handshake(psk)) return
+            }
             while (!closed) {
-                val frame = EspFrame.read(input)
-                if (frame.indicator != EspFrame.INDICATOR_PLAINTEXT) {
+                val cipher = receiveCipher
+                val frame = if (cipher != null) NoiseFrame.read(input, cipher) else EspFrame.read(input)
+                if (cipher == null && frame.indicator != EspFrame.INDICATOR_PLAINTEXT) {
                     server.log("esp: refusing an encrypted frame on a plaintext session")
                     break
                 }
@@ -231,6 +260,61 @@ internal class EspConnection(
     fun close() {
         closed = true
         runCatching { socket.close() }
+    }
+
+    /**
+     * Responder side of ESPHome's Noise handshake.
+     *
+     * 1. the client sends an empty noise frame; its bytes (with a length prefix)
+     *    become part of the prologue, binding the handshake to this connection
+     * 2. we answer with the server hello: proto 0x01, name, mac, each NUL ended
+     * 3. the client sends handshake message 1, we answer with message 2
+     *
+     * A plaintext client fails at step 1; the reject frame carries the noise
+     * indicator, which is what makes HA ask the user for an encryption key.
+     */
+    private fun handshake(psk: ByteArray): Boolean {
+        val hello = runCatching { NoiseFrame.readRaw(input) }.getOrElse {
+            server.log("esp: client did not open with a noise frame (${it.message})")
+            sendHandshakeReject("Bad indicator byte")
+            return false
+        }
+        val handshake = NoiseHandshake(psk, NoiseHandshake.prologue(hello), NoiseHandshake.Role.RESPONDER)
+        NoiseFrame.writeRaw(out, serverHello())
+
+        val payload = runCatching { NoiseFrame.readRaw(input) }.getOrElse {
+            server.log("esp: handshake frame missing (${it.message})")
+            return false
+        }
+        if (payload.isEmpty() || payload[0].toInt() != 0x00) {
+            server.log("esp: client rejected the handshake")
+            return false
+        }
+        val result = runCatching {
+            handshake.readMessage1(payload.copyOfRange(1, payload.size))
+            NoiseFrame.writeRaw(out, byteArrayOf(0x00) + handshake.writeMessage2())
+            handshake.split()
+        }
+        if (result.isFailure) {
+            val error = result.exceptionOrNull()
+            server.log("esp: handshake failed: ${error?.message ?: error?.javaClass?.simpleName}")
+            // Matches ESPHome's reject reason, which clients map to a wrong key.
+            sendHandshakeReject(if (error is javax.crypto.AEADBadTagException) "Handshake MAC failure" else "Handshake failure")
+            return false
+        }
+        sendCipher = handshake.sendCipher
+        receiveCipher = handshake.receiveCipher
+        server.log("esp: noise handshake complete")
+        return true
+    }
+
+    private fun serverHello(): ByteArray =
+        byteArrayOf(0x01) +
+            server.deviceName().toByteArray() + byteArrayOf(0x00) +
+            server.macPlain().toByteArray() + byteArrayOf(0x00)
+
+    private fun sendHandshakeReject(reason: String) {
+        runCatching { NoiseFrame.writeRaw(out, byteArrayOf(0x01) + reason.toByteArray()) }
     }
 
     fun pushLastCommand(text: String) {
@@ -312,7 +396,7 @@ internal class EspConnection(
         .setManufacturer(Build.MANUFACTURER ?: "Android")
         .setProjectName("cn.alone.hamitv")
         .setProjectVersion(EspServer.PROJECT_VERSION)
-        .setApiEncryptionSupported(false)
+        .setApiEncryptionSupported(server.encryptionEnabled())
         .build()
 
     private fun listEntities() {
@@ -407,8 +491,11 @@ internal class EspConnection(
     private fun send(typeId: Int, body: ByteArray) {
         if (closed) return
         synchronized(writeLock) {
-            runCatching { EspFrame.write(out, typeId, body) }
-                .onFailure { close() }
+            runCatching {
+                val cipher = sendCipher
+                if (cipher != null) NoiseFrame.write(out, cipher, typeId, body)
+                else EspFrame.write(out, typeId, body)
+            }.onFailure { close() }
         }
     }
 }

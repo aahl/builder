@@ -14,7 +14,7 @@ android {
         minSdk = 28
         targetSdk = 34
         versionCode = 2
-        versionName = "0.1.1-a1"
+        versionName = "0.1.1-a2"
     }
 
     // Pin the debug signing key to an explicit file when CI provides one,

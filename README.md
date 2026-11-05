@@ -40,7 +40,7 @@ HA ──ESPHome API(:6053)──►  TV Agent  ──Intent/广播/Binder──
 | M3 | `select` 实体（输入源） | 完成 |
 | M3.5 | `camera` 实体（拉流）+ 配置台试跑接口 | 待办 |
 | M4 | mDNS 自动发现 | 完成 |
-| M4.5 | Noise PSK 加密 | 待办 |
+| M4.5 | Noise PSK 加密（含配置台开关/刷新/复制） | 完成 |
 
 ## ESPHome 协议
 
@@ -100,6 +100,35 @@ HDMI1/2/3 = 23/24/25，TV = 1，AV = 2，VGA = 0。
 状态只反映「本 App 最后成功切到的值」——用遥控器换台时它并不知道，重启后
 为 unknown（`missing_state`）。命令执行失败不会更新状态，错误留在
 `text_sensor.mitv_last_command` 里。
+
+## 加密
+
+默认关闭，走明文。配置台「加密」卡片可以一键启用：生成 32 字节 PSK 并以 base64
+显示，点「复制」贴进 HA 的密钥框；「刷新密钥」会换一把新的（HA 需要同步更新，
+否则连不上）。
+
+实现的是 ESPHome 的 `Noise_NNpsk0_25519_ChaChaPoly_SHA256`，两个握手消息：
+
+```
+客户端 → 空 noise 帧（进 prologue）   服务端 → ServerHello（proto 0x01 + name\0 + mac\0）
+客户端 → 消息1（psk, e）              服务端 → 消息2（e, ee）  → split
+```
+
+几个容易踩的点：
+
+- prologue 不是常量，是 `NoiseAPIInit` **加上客户端第一个帧**（长度前缀），所以
+  服务端必须先读那一帧再开始握手。
+- ServerHello 里的 mac 要和 mDNS TXT 里的完全一致（HA 逐字节比较，不做归一化），
+  这里两边都取 `02:82:...` 去掉冒号并小写。
+- 加密帧是 `0x01` + 2 字节大端长度 + 密文；密文里是 4 字节定长头
+  （类型、长度各 2 字节大端）+ protobuf，与明文帧的 varint 头不同。
+- 明文客户端连上加密设备时，服务端回一个带 `0x01` 标记的 reject 帧，HA 据此
+  弹出「需要密钥」。
+
+X25519 用 BigInteger 实现（Android 没有 JCA 的 X25519，引入 BouncyCastle 要
+多 8MB）；ChaCha20-Poly1305 走系统 JCA（API 28 起可用）。
+`tools/noise_reference.py` 是一份独立的 Python 参考实现，单元测试里的黄金向量
+由它生成——Kotlin 侧差一个字节就会失败。
 
 ## 自动发现
 
@@ -162,7 +191,7 @@ APK 由 GitHub Actions 构建，推送 `android/hamitv` 分支即触发，
 
 ```
 app/src/main/proto/          api.proto（由 tools/sync_proto.py 从 ESPHome 生成）
-app/src/main/java/.../esp/   分帧、消息 id、传输层（plaintext 已实现，noise 待补）
+app/src/main/java/.../esp/   分帧、消息 id、传输层（明文 + Noise）
 app/src/main/java/.../web/   内嵌配置台（Ktor CIO）+ 配对限流
 app/src/main/java/.../config/ 设置与命令表存储
 app/src/main/java/.../tv/     小米摄像头 Binder 客户端（画中画）

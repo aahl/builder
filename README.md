@@ -173,6 +173,11 @@ stopped 的包收不到任何广播，alarm / job 也一并失效。占住 Home 
 （不校验签名），日志里是 `[White] com.ts.launcher=511`，这个包不会被 stop。
 换机型/换固件如果失效，用 `-PappId=<白名单里的包名>` 重新打包即可。
 
+如果电视上还留着 Projectivy 这类第三方桌面，并且开着它的无障碍服务，HOME 键会被
+它抢走：系统先把我们拉起来，它的进程紧接着又把自己的桌面顶上来。在
+`settings get secure enabled_accessibility_services` 里把它的服务去掉即可
+（`com.spocky.projengmenu/services.ProjectivyAccessibilityService`）。
+
 桌面的应用网格会把"自己这个包"藏掉，只留配置台一个入口（`AppAdapter` 里按组件
 判断，不是按包名）——配对码只显示在配置台上，藏了就配不上对。
 

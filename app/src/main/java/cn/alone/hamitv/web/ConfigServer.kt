@@ -203,7 +203,8 @@ class ConfigServer(
                 if (!call.authorized()) return@put
                 if (!call.ensureCsrf()) return@put
                 store.keepAdb = call.receive<AdbPayload>().keep
-                HamitvApp.applyKeepAdb(context)
+                // `context` here would be the call's coroutine context.
+                HamitvApp.applyKeepAdb(this@ConfigServer.context)
                 call.respond(adbState())
             }
 

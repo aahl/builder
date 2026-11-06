@@ -150,7 +150,7 @@ Android 9 没有这个 JCA provider（`No provider found for ChaCha20-Poly1305`�
 
 ## 自启动与保活
 
-- 开机：`BOOT_COMPLETED` 拉起前台服务
+- 开机：由电视桌面的「应用自启动」拉起（见下），`BOOT_COMPLETED` 在这台机器上收不到
 - 升级：`MY_PACKAGE_REPLACED` 同样拉起，`adb install -r` 之后不会留下一个死进程
 - 被系统回收：`START_STICKY`，由系统重启
 - 任务被划掉：`onTaskRemoved` 里挂 1 秒的 `AlarmManager`，用前台 `PendingIntent` 重启
@@ -163,22 +163,19 @@ Android 9 没有这个 JCA provider（`No provider found for ChaCha20-Poly1305`�
 stopped：`logcat` 里是 `PackageManager: stop: <pkg> for user 0`，紧跟在
 `MitvConfigParser: Parse mitv_security_center.xml start` 后面，配置在系统分区里，
 没有 root 改不了。stopped 的包收不到任何广播，`BOOT_COMPLETED` 和
-`MY_PACKAGE_REPLACED` 都不会到，alarm / job 也一并失效。
+`MY_PACKAGE_REPLACED` 都不会到，alarm / job 也一并失效。`settings put system
+start_3rd_app` 也试过，电视管家开机并不读它（等满 4 分钟仍是 stopped）。
 
-同一次开机里原厂桌面 `com.spocky.projengmenu` 也被置了 stopped，但它照样起来了——
-系统拉起 home 组件不受这个标记影响。所以开机钩子只能是 home：
+能用的只有**桌面自带的自启动**：电视桌面（`com.spocky.projengmenu`）的「应用自启动」
+会在开机后显式启动勾选的应用，那是从前台发起的 activity 启动，不受 stopped 影响，
+并且会把 stopped 清掉。所以：
 
-- `HomeActivity` 声明 `CATEGORY_HOME`，透明主题、不画窗口
-- 被拉起时先 `AgentService.start()`，再把画面交还给原厂桌面，然后 `finish()`
-- 把本应用设为默认桌面（一次性）：`adb shell cmd package set-home-activity
-  cn.alone.hamitv/.HomeActivity`；这条命令不存在时用 `am start -a
-  android.intent.action.MAIN -c android.intent.category.HOME` 在电视上选一次「始终」
+- 在桌面的「应用自启动」里勾上本应用，一次性设置
+- 桌面拉起的是 `MainActivity`。冷启动 + 开机 5 分钟内，视为自启动：只
+  `AgentService.start()` 然后立刻 `finish()`，画面还给桌面，电视不会停在配对页
+- 服务已经在跑（用户自己点开图标）或者开机超过 5 分钟，才显示配置台
 
-副作用是按 HOME 键会先经过我们（无窗口，只有一次任务切换），再进原厂桌面。找不到
-其它桌面时 `HomeActivity` 会退化成应用列表，避免电视停在黑屏上。
-
-`BOOT_COMPLETED` / `MY_PACKAGE_REPLACED` 的接收器保留着：如果哪天厂商策略变了，
-这条路是免费的。
+`BOOT_COMPLETED` / `MY_PACKAGE_REPLACED` 的接收器保留着：厂商策略变了这条路是免费的。
 
 ## 自动发现
 

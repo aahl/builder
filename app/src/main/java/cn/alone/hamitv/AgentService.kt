@@ -59,6 +59,7 @@ class AgentService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         store = ConfigStore(this)
         esp = EspServer(this, store, CommandExecutor(this)) { Log.d(TAG, it) }
         server = ConfigServer(this, store, esp)
@@ -97,6 +98,7 @@ class AgentService : Service() {
     }
 
     override fun onDestroy() {
+        isRunning = false
         runCatching { connectivity?.unregisterNetworkCallback(networkCallback) }
         esp.stop()
         server.stop()
@@ -149,6 +151,11 @@ class AgentService : Service() {
         private const val CHANNEL_ID = "agent"
         private const val NOTIFICATION_ID = 1
         private const val RESTART_REQUEST = 2
+
+        /** Lets the console tell "opened by hand" from "started by the launcher". */
+        @Volatile
+        var isRunning = false
+            private set
 
         fun start(context: android.content.Context) {
             androidx.core.content.ContextCompat.startForegroundService(

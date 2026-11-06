@@ -78,7 +78,7 @@
     <h1>HA MiTV</h1>
     <div class="sub">输入电视屏幕上显示的 4 位配对码</div>
     <div class="card">
-      <input id="code" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="0000"
+      <input id="code" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="0000" autofocus
              style="text-align:center;font-size:32px;letter-spacing:.4em;font-family:ui-monospace,Menlo,monospace">
       <div class="row"><button id="pair">连接</button></div>
     </div>
@@ -91,6 +91,18 @@
     <div class="card">
       <h2>状态</h2>
       <div id="status"></div>
+    </div>
+
+    <div class="card">
+      <h2>摄像头画中画</h2>
+      <div class="sub" id="pipStatus" style="margin:0 0 10px">读取中…</div>
+      <label for="pipCamera">摄像头</label>
+      <select id="pipCamera"></select>
+      <div class="row">
+        <button id="pipStart">打开画中画</button>
+        <button id="pipClose" class="ghost">关闭</button>
+        <button id="pipRefresh" class="ghost">刷新</button>
+      </div>
     </div>
 
     <div class="card">
@@ -122,18 +134,6 @@
     </div>
 
     <div class="card">
-      <h2>摄像头画中画</h2>
-      <div class="sub" id="pipStatus" style="margin:0 0 10px">读取中…</div>
-      <label for="pipCamera">摄像头</label>
-      <select id="pipCamera"></select>
-      <div class="row">
-        <button id="pipStart">打开画中画</button>
-        <button id="pipClose" class="ghost">关闭</button>
-        <button id="pipRefresh" class="ghost">刷新</button>
-      </div>
-    </div>
-
-    <div class="card">
       <h2>命令表</h2>
       <textarea id="commands" spellcheck="false"></textarea>
       <div class="row">
@@ -144,6 +144,11 @@
 
     <div class="card">
       <h2>维护</h2>
+      <label style="display:flex;align-items:center;gap:10px;margin:0 0 4px;color:var(--text)">
+        <input type="checkbox" id="adbKeep" style="width:auto;margin:0">
+        <span>开机后自动重新开启 ADB 调试</span>
+      </label>
+      <div class="sub" id="adbHint" style="margin:0 0 10px"></div>
       <div class="row">
         <button id="rotate" class="ghost">重置配对码</button>
         <button id="restart" class="ghost">重启服务</button>
@@ -187,6 +192,9 @@ async function api(path, options = {}) {
 function showLogin() {
   $("login").classList.remove("hidden");
   $("app").classList.add("hidden");
+  // The page exists to be paired once: put the caret in the box so a phone or
+  // a remote keyboard can type the four digits straight away.
+  $("code").focus();
 }
 
 function showApp() {
@@ -223,6 +231,30 @@ async function loadNoise() {
   $("psk").value = noise.psk;
   renderNoise(noise);
 }
+
+function renderAdb(state) {
+  $("adbKeep").checked = state.keep;
+  $("adbHint").textContent = state.granted
+    ? "已授予 WRITE_SECURE_SETTINGS，每次开机都会写回 adb_enabled=1"
+    : "没有 WRITE_SECURE_SETTINGS，打开也不会生效，先执行：adb shell pm grant com.ts.launcher android.permission.WRITE_SECURE_SETTINGS";
+}
+
+async function loadAdb() {
+  renderAdb(await api("/api/adb"));
+}
+
+$("adbKeep").onchange = async () => {
+  try {
+    const state = await api("/api/adb", {
+      method: "PUT",
+      body: JSON.stringify({ keep: $("adbKeep").checked }),
+    });
+    renderAdb(state);
+    toast(state.keep ? (state.granted ? "已开启" : "已记录，但没有权限不会生效") : "已关闭");
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
 
 function renderNoise(noise) {
   $("noiseStatus").textContent = noise.enabled
@@ -275,7 +307,7 @@ async function loadPip() {
 async function boot() {
   try {
     await loadStatus();
-    await Promise.all([loadConfig(), loadCommands(), loadPip(), loadNoise()]);
+    await Promise.all([loadConfig(), loadCommands(), loadPip(), loadNoise(), loadAdb()]);
     showApp();
   } catch (error) {
     if (error.message !== "unauthorized") {

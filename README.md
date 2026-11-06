@@ -148,10 +148,15 @@ Android 9 没有这个 JCA provider（`No provider found for ChaCha20-Poly1305`�
 参考实现做对照：PSK 握手在 `e` 上比普通握手多一次 `MixKey(e.public_key)`，
 两边一起写错时测试会互相印证，只有真客户端连不上。
 
-## 自启动与保活
+## 桌面与自启动
 
-- 开机：本应用自己就是 Home，由系统拉起（见下），`BOOT_COMPLETED` 在这台机器上收不到
-- 升级：`MY_PACKAGE_REPLACED` 同样拉起，`adb install -r` 之后不会留下一个死进程
+这个 APK 同时是**电视桌面**和 ESPHome 桥：`:launcher` 模块是 CleanYourTV 的桌面
+（见 `third_party/cleanyourtv/`），它的 `MainActivity` 占着 `CATEGORY_HOME`；我们的
+`AgentService` 在同一个进程里，由 `HamitvApp` 在第一块界面 resume 时拉起。
+
+- 开机：系统必须拉起 Home，进程随之起来，`HamitvApp` 收到第一次 `onActivityResumed`
+  就 `AgentService.start()`。不再有透明中转页，按 HOME 直达桌面
+- 升级：`MY_PACKAGE_REPLACED` 同样会拉起；`BootReceiver` 保留着
 - 被系统回收：`START_STICKY`，由系统重启
 - 任务被划掉：`onTaskRemoved` 里挂 1 秒的 `AlarmManager`，用前台 `PendingIntent` 重启
 - 网络变化：`registerDefaultNetworkCallback` 检测到 IP 变了就重新注册 mDNS
@@ -159,37 +164,17 @@ Android 9 没有这个 JCA provider（`No provider found for ChaCha20-Poly1305`�
 - 电池优化豁免：**不做**。这台电视的 `dumpsys deviceidle enabled` 是 0，Doze 控制器
   根本没启用，申请豁免是纯粹的空操作（弹窗还多一步）
 
-**`BOOT_COMPLETED` 在这台电视上收不到**。安全中心在开机扫包时就把非白名单应用置成
-stopped：`logcat` 里是 `PackageManager: stop: <pkg> for user 0`，紧跟在
-`MitvConfigParser: Parse mitv_security_center.xml start` 后面，配置在系统分区里，
-没有 root 改不了。stopped 的包收不到任何广播，`BOOT_COMPLETED` 和
-`MY_PACKAGE_REPLACED` 都不会到，alarm / job 也一并失效。
-
-所以这个 APK 占住 Home：`HomeActivity` 声明 `CATEGORY_HOME`，透明主题、不画窗口，
-被系统拉起时先 `AgentService.start()`，再把画面交还给原厂桌面（优先
-`com.spocky.projengmenu`，其次 `com.mitv.tvhome`），然后 `finish()`。找不到别的桌面
-时退化成应用列表，不会停在黑屏上。
+为什么不靠 `BOOT_COMPLETED`：安全中心在开机扫包时会把非白名单应用置成 stopped
+（`PackageManager: stop: <pkg> for user 0`，紧跟在 `MitvConfigParser` 后面），
+stopped 的包收不到任何广播，alarm / job 也一并失效。占住 Home 是唯一稳定发生在
+开机、且不受这个标志影响的时机。
 
 包名用 `com.ts.launcher`：安全中心的 `mitv_security_center.xml` 白名单只比对包名
-（不校验签名），`com.ts.launcher` 在 `third_party_home` 和 `boot_autostart` 两段里都有
-（CleanYourTV 用它做同样的 trampoline）。换机型/换固件如果失效，用
-`-PappId=<白名单里的包名>` 重新打包即可。
+（不校验签名），日志里是 `[White] com.ts.launcher=511`，这个包不会被 stop。
+换机型/换固件如果失效，用 `-PappId=<白名单里的包名>` 重新打包即可。
 
-`BOOT_COMPLETED` / `MY_PACKAGE_REPLACED` 的接收器保留着：厂商策略变了这条路是免费的。
-
-### CleanYourTV 卡片
-
-`MainActivity` 另外声明了 `com.gathin.tvhome.category.DOCK_CARD` 和
-`@xml/module_card`（label `HA MiTV`，caption `ESPHome bridge`，accent `#4c9aff`）。
-装到跑 CleanYourTV 的电视上，桌面会问一次「Show / Keep hidden」；答 Show 之后
-这张卡顶替普通磁贴，摆在字母表网格前面，点开就是配置台。
-
-这和上面的自启动是两条独立的路：CleanYourTV 的卡片只是桌面读 `PackageManager`
-元数据画出来的磁贴，不会在开机时拉起进程；要开机自启还是靠 `HomeActivity`。
-两边都在也不冲突——我们不是默认桌面时，`HomeActivity` 就是普通的一个入口。
-
-卡片值必须写成字面量（spec 1 不解析 `@string`），label 一旦改动，桌面会重新问
-用户一次，所以定下来别改。
+桌面的应用网格会把"自己这个包"藏掉，只留配置台一个入口（`AppAdapter` 里按组件
+判断，不是按包名）——配对码只显示在配置台上，藏了就配不上对。
 
 ## 自动发现
 
@@ -257,6 +242,9 @@ app/src/main/java/.../web/   内嵌配置台（Ktor CIO）+ 配对限流
 app/src/main/java/.../config/ 设置与命令表存储
 app/src/main/java/.../tv/     小米摄像头 Binder 客户端（画中画）
 app/src/main/assets/web/     单页配置界面（无构建）
+app/src/main/java/.../HamitvApp.kt  进程起来时拉起 AgentService
+launcher/                    CleanYourTV 桌面，作为 library 模块（MIT，见 third_party/）
+third_party/cleanyourtv/     上游 commit 与本地补丁清单
 tools/sync_proto.py          重新同步 ESPHome proto
 ```
 

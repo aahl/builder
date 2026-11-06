@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "hamitv"
 include(":app")
+include(":launcher")

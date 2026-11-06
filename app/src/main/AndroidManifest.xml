@@ -16,8 +16,14 @@
         android:name="android.hardware.touchscreen"
         android:required="false" />
 
+    <!-- The home screen itself comes from the :launcher module (CleanYourTV);
+         its MainActivity holds the HOME filter. This activity is the config
+         console: the address and the pairing code, plus a tile in that grid. -->
     <application
+        android:name=".HamitvApp"
         android:allowBackup="false"
+        android:banner="@drawable/banner"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Hamitv">
@@ -29,29 +35,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-            </intent-filter>
-            <!-- CleanYourTV shows this as a dock card instead of a plain tile.
-                 The filter and the meta-data must sit on the activity that has
-                 LEANBACK_LAUNCHER, see docs/specs/card.md in that project. -->
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="com.gathin.tvhome.category.DOCK_CARD" />
-            </intent-filter>
-            <meta-data
-                android:name="com.gathin.tvhome.card"
-                android:resource="@xml/module_card" />
-        </activity>
-
-        <activity
-            android:name=".HomeActivity"
-            android:exported="true"
-            android:excludeFromRecents="true"
-            android:launchMode="singleTask"
-            android:theme="@style/Theme.Hamitv.Home">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.HOME" />
-                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 

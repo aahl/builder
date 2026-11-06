@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
-import android.os.SystemClock
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
@@ -36,18 +35,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = ConfigStore(this)
-
-        // The TV's own launcher starts this activity at boot when autostart is
-        // enabled for the app. There is nothing to show then: bring the agent
-        // up and hand the screen straight back, or the TV would sit on the
-        // pairing page after every boot.
-        val launchedByAutostart =
-            !AgentService.isRunning && SystemClock.elapsedRealtime() < AUTOSTART_WINDOW_MS
-        AgentService.start(this)
-        if (launchedByAutostart) {
-            finish()
-            return
-        }
 
         val title = TextView(this).apply {
             text = getString(R.string.app_name)
@@ -138,7 +125,7 @@ class MainActivity : AppCompatActivity() {
     private fun isOk(keyCode: Int): Boolean =
         keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER
 
-    /** Where the TV's autostart whitelist lives; the vendor UI is the only way in. */
+    /** App info, for the permissions or a force stop when something looks wrong. */
     private fun openAppSettings() {
         runCatching {
             startActivity(
@@ -164,16 +151,5 @@ class MainActivity : AppCompatActivity() {
             }
         }
         return Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888)
-    }
-
-    companion object {
-        /**
-         * How long after boot a cold start counts as the launcher's autostart
-         * rather than someone opening the app. The launcher's own autostart
-         * delay is configurable and defaults to minutes, so this has to be
-         * generous; a tap that gets swallowed only costs a second tap, since
-         * the agent is running by then.
-         */
-        private const val AUTOSTART_WINDOW_MS = 20 * 60 * 1000L
     }
 }

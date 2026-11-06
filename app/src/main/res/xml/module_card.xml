@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- CleanYourTV (com.gathin.tvhome) module card, spec 1.
-     Values must be literal text: @string references are not resolved in spec 1.
-     The accent is the panel's own accent colour, so the glow matches the config page. -->
-<card spec="1" label="HA MiTV" caption="ESPHome bridge" accent="#4c9aff" />

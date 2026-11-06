@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher module ships app_name in 30 locales (zh-rCN is "主屏幕"), and a
+     per-locale value beats our default one. Keep the name ours on the one
+     language this TV runs; add more folders here if that ever changes. -->
+<resources>
+    <string name="app_name">HA MiTV</string>
+</resources>

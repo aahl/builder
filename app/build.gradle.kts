@@ -18,8 +18,8 @@ android {
         applicationId = (findProperty("appId") as String?) ?: "com.ts.launcher"
         minSdk = 28
         targetSdk = 34
-        versionCode = 8
-        versionName = "0.2.0-a2"
+        versionCode = 9
+        versionName = "0.2.0-a3"
     }
 
     // Pin the debug signing key to an explicit file when CI provides one,
@@ -79,6 +79,7 @@ protobuf {
 }
 
 dependencies {
+    implementation(project(":launcher"))
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

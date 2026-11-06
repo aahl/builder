@@ -156,7 +156,8 @@ Android 9 没有这个 JCA provider（`No provider found for ChaCha20-Poly1305`�
 - 任务被划掉：`onTaskRemoved` 里挂 1 秒的 `AlarmManager`，用前台 `PendingIntent` 重启
 - 网络变化：`registerDefaultNetworkCallback` 检测到 IP 变了就重新注册 mDNS
   （监听本身绑的是 `0.0.0.0`，不受影响）
-- Doze：首次打开界面时请求一次电池优化豁免，失败也不影响运行
+- 电池优化豁免：**不做**。这台电视的 `dumpsys deviceidle enabled` 是 0，Doze 控制器
+  根本没启用，申请豁免是纯粹的空操作（弹窗还多一步）
 
 **做不到的**：force-stop（包括厂商「一键清理」里的强制停止）之后不会自启，系统的
 alarm 和 job 也一并被取消。开机能否自启取决于电视的「自启动管理」，属于厂商策略，

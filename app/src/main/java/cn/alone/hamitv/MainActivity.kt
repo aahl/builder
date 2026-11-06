@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
-import android.os.PowerManager
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
@@ -87,7 +86,6 @@ class MainActivity : AppCompatActivity() {
         })
 
         AgentService.start(this)
-        requestBatteryExemption()
     }
 
     override fun onResume() {
@@ -138,24 +136,44 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Doze can freeze the agent while the TV is idle. The TV may not honour the
-     * request, so a failure here is not worth interrupting the user for.
-     */
-    private fun requestBatteryExemption() {
-        val power = getSystemService(PowerManager::class.java) ?: return
-        if (power.isIgnoringBatteryOptimizations(packageName)) return
-        if (store.batteryPrompted) return
-        store.batteryPrompted = true
-        runCatching {
-            startActivity(
-                Intent(
-                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                    Uri.parse("package:$packageName"),
-                ),
-            )
-        }
+    override fun onResume() {
+        super.onResume()
+        render()
     }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (isOk(keyCode)) {
+            // Track the key so a long press can open the system settings.
+            event?.startTracking()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        if (isOk(keyCode)) {
+            if (longPressHandled) {
+                longPressHandled = false
+            } else {
+                store.rotatePairingCode()
+                render()
+            }
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
+    }
+
+    override fun onKeyLongPress(keyCode: Int, event: KeyEvent?): Boolean {
+        if (isOk(keyCode)) {
+            longPressHandled = true
+            openAppSettings()
+            return true
+        }
+        return super.onKeyLongPress(keyCode, event)
+    }
+
+    private fun isOk(keyCode: Int): Boolean =
+        keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER
 
     private fun render() {
         val url = "http://${localIpv4()}:${store.webPort}"

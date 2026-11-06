@@ -148,6 +148,20 @@ Android 9 没有这个 JCA provider（`No provider found for ChaCha20-Poly1305`�
 参考实现做对照：PSK 握手在 `e` 上比普通握手多一次 `MixKey(e.public_key)`，
 两边一起写错时测试会互相印证，只有真客户端连不上。
 
+## 自启动与保活
+
+- 开机：`BOOT_COMPLETED` 拉起前台服务
+- 升级：`MY_PACKAGE_REPLACED` 同样拉起，`adb install -r` 之后不会留下一个死进程
+- 被系统回收：`START_STICKY`，由系统重启
+- 任务被划掉：`onTaskRemoved` 里挂 1 秒的 `AlarmManager`，用前台 `PendingIntent` 重启
+- 网络变化：`registerDefaultNetworkCallback` 检测到 IP 变了就重新注册 mDNS
+  （监听本身绑的是 `0.0.0.0`，不受影响）
+- Doze：首次打开界面时请求一次电池优化豁免，失败也不影响运行
+
+**做不到的**：force-stop（包括厂商「一键清理」里的强制停止）之后不会自启，系统的
+alarm 和 job 也一并被取消。开机能否自启取决于电视的「自启动管理」，属于厂商策略，
+App 无法绕过——界面上给了提示，长按 OK 打开系统应用详情页去授权。
+
 ## 自动发现
 
 用 Android 的 `NsdManager` 广播 `_esphomelib._tcp.local.`，HA 的 zeroconf 流程

@@ -1,8 +1,12 @@
 package cn.alone.hamitv
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
@@ -25,6 +29,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var urlView: TextView
     private lateinit var codeView: TextView
     private lateinit var qrView: ImageView
+
+    /** A long press already opened the settings, so the key-up must not rotate. */
+    private var longPressHandled = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,6 +66,13 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             setPadding(0, 20, 0, 0)
         }
+        val autostart = TextView(this).apply {
+            text = getString(R.string.autostart_hint)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTextColor(Color.parseColor("#455A64"))
+            gravity = Gravity.CENTER
+            setPadding(0, 12, 0, 0)
+        }
 
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -69,9 +83,11 @@ class MainActivity : AppCompatActivity() {
             addView(qrView)
             addView(codeView)
             addView(hint)
+            addView(autostart)
         })
 
         AgentService.start(this)
+        requestBatteryExemption()
     }
 
     override fun onResume() {
@@ -80,12 +96,65 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
-            store.rotatePairingCode()
-            render()
+        if (isOk(keyCode)) {
+            // Track the key so a long press can open the system settings.
+            event?.startTracking()
             return true
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        if (isOk(keyCode)) {
+            if (longPressHandled) {
+                longPressHandled = false
+            } else {
+                store.rotatePairingCode()
+                render()
+            }
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
+    }
+
+    override fun onKeyLongPress(keyCode: Int, event: KeyEvent?): Boolean {
+        if (isOk(keyCode)) {
+            longPressHandled = true
+            openAppSettings()
+            return true
+        }
+        return super.onKeyLongPress(keyCode, event)
+    }
+
+    private fun isOk(keyCode: Int): Boolean =
+        keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER
+
+    /** Where the TV's autostart whitelist lives; the vendor UI is the only way in. */
+    private fun openAppSettings() {
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")),
+            )
+        }
+    }
+
+    /**
+     * Doze can freeze the agent while the TV is idle. The TV may not honour the
+     * request, so a failure here is not worth interrupting the user for.
+     */
+    private fun requestBatteryExemption() {
+        val power = getSystemService(PowerManager::class.java) ?: return
+        if (power.isIgnoringBatteryOptimizations(packageName)) return
+        if (store.batteryPrompted) return
+        store.batteryPrompted = true
+        runCatching {
+            startActivity(
+                Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:$packageName"),
+                ),
+            )
+        }
     }
 
     private fun render() {

@@ -65,6 +65,11 @@ class ConfigStore(context: Context) {
         return null
     }
 
+    /** Set once the system dialog for the battery exemption was shown. */
+    var batteryPrompted: Boolean
+        get() = prefs.getBoolean(KEY_BATTERY_PROMPTED, false)
+        set(value) = prefs.edit().putBoolean(KEY_BATTERY_PROMPTED, value).apply()
+
     /** 4 digit pairing code shown on the TV. */
     val pairingCode: String
         get() = prefs.getString(KEY_CODE, null) ?: rotatePairingCode()
@@ -157,6 +162,7 @@ class ConfigStore(context: Context) {
         private const val KEY_CODE = "pairing_code"
         private const val KEY_SESSION = "session"
         private const val KEY_SESSION_AT = "session_at"
+        private const val KEY_BATTERY_PROMPTED = "battery_prompted"
         private const val KEY_NOISE_ENABLED = "noise_enabled"
         private const val KEY_NOISE_PSK = "noise_psk"
         private const val PSK_BYTES = 32

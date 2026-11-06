@@ -169,9 +169,11 @@ class MainActivity : AppCompatActivity() {
     companion object {
         /**
          * How long after boot a cold start counts as the launcher's autostart
-         * rather than someone opening the app. Long enough for a slow boot,
-         * short enough that a deliberate tap later still shows the console.
+         * rather than someone opening the app. The launcher's own autostart
+         * delay is configurable and defaults to minutes, so this has to be
+         * generous; a tap that gets swallowed only costs a second tap, since
+         * the agent is running by then.
          */
-        private const val AUTOSTART_WINDOW_MS = 5 * 60 * 1000L
+        private const val AUTOSTART_WINDOW_MS = 20 * 60 * 1000L
     }
 }

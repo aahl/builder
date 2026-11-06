@@ -13,8 +13,8 @@ android {
         applicationId = "cn.alone.hamitv"
         minSdk = 28
         targetSdk = 34
-        versionCode = 4
-        versionName = "0.1.1-a9"
+        versionCode = 5
+        versionName = "0.1.1-a10"
     }
 
     // Pin the debug signing key to an explicit file when CI provides one,

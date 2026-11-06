@@ -86,7 +86,8 @@ internal class SymmetricState(protocolName: ByteArray, prologue: ByteArray) {
         private set
 
     init {
-        mixHash(handshakeHash)
+        // InitializeSymmetric only mixes the prologue; hashing h into itself
+        // first is not in the spec and desynchronises every other client.
         mixHash(prologue)
     }
 

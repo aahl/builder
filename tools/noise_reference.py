@@ -1,105 +1,24 @@
-"""Reference NNpsk0 handshake used to produce golden vectors for the Kotlin tests.
+"""Generate golden Noise vectors with the library ESPHome clients actually use.
 
-Implements the Noise spec (rev 34) with ESPHome's prologue and framing so the
-Kotlin responder can be compared byte for byte.
+The earlier hand-written reference had the same two spec deviations as the
+Kotlin code, so the tests passed while every real client failed. This script
+uses `noiseprotocol` (the backend aioesphomeapi runs) as the oracle:
+
+    python3 -m pip install noiseprotocol
+    python3 tools/noise_reference.py
+
+Ephemerals are fixed so the transcript is reproducible.
 """
-import hashlib
-import hmac
+import base64
 import sys
 
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
-from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+from noise.connection import Keypair, NoiseConnection
 
-PROTOCOL_NAME = b"Noise_NNpsk0_25519_ChaChaPoly_SHA256"
-HASHLEN = 32
-
-
-def hkdf(ck: bytes, ikm: bytes, n: int) -> list[bytes]:
-    temp = hmac.new(ck, ikm, hashlib.sha256).digest()
-    out, prev = [], b""
-    for i in range(1, n + 1):
-        prev = hmac.new(temp, prev + bytes([i]), hashlib.sha256).digest()
-        out.append(prev)
-    return out
-
-
-def dh(priv: bytes, pub: bytes) -> bytes:
-    return X25519PrivateKey.from_private_bytes(priv).exchange(X25519PublicKey.from_public_bytes(pub))
-
-
-class CipherState:
-    def __init__(self, key: bytes | None):
-        self.k = key
-        self.n = 0
-
-    def encrypt(self, plaintext: bytes, aad: bytes) -> bytes:
-        if self.k is None:
-            return plaintext
-        nonce = b"\x00" * 4 + self.n.to_bytes(8, "little")
-        self.n += 1
-        return ChaCha20Poly1305(self.k).encrypt(nonce, plaintext, aad)
-
-    def decrypt(self, ciphertext: bytes, aad: bytes) -> bytes:
-        if self.k is None:
-            return ciphertext
-        nonce = b"\x00" * 4 + self.n.to_bytes(8, "little")
-        self.n += 1
-        return ChaCha20Poly1305(self.k).decrypt(nonce, ciphertext, aad)
-
-
-class SymmetricState:
-    def __init__(self, prologue: bytes):
-        h = hashlib.sha256(PROTOCOL_NAME).digest()
-        self.ck = h
-        self.h = h
-        self.mix_hash(h)
-        self.mix_hash(prologue)
-        self.cipher = CipherState(None)
-
-    def mix_hash(self, data: bytes) -> None:
-        self.h = hashlib.sha256(self.h + data).digest()
-
-    def mix_key(self, ikm: bytes) -> None:
-        self.ck, k = hkdf(self.ck, ikm, 2)
-        self.cipher = CipherState(k)
-
-    def mix_key_and_hash(self, ikm: bytes) -> None:
-        self.ck, temp_h, temp_k = hkdf(self.ck, ikm, 3)
-        self.mix_hash(temp_h)
-        self.cipher = CipherState(temp_k)
-
-    def encrypt_and_hash(self, plaintext: bytes) -> bytes:
-        ciphertext = self.cipher.encrypt(plaintext, self.h)
-        self.mix_hash(ciphertext)
-        return ciphertext
-
-    def decrypt_and_hash(self, ciphertext: bytes) -> bytes:
-        plaintext = self.cipher.decrypt(ciphertext, self.h)
-        self.mix_hash(ciphertext)
-        return plaintext
-
-    def split(self):
-        k1, k2 = hkdf(self.ck, b"", 2)
-        return CipherState(k1), CipherState(k2)
-
-
-def handshake(psk: bytes, prologue: bytes, e1_priv: bytes, e2_priv: bytes):
-    s = SymmetricState(prologue)
-    e1_pub = X25519PrivateKey.from_private_bytes(e1_priv).public_key().public_bytes_raw()
-
-    # msg1: psk, e
-    s.mix_key_and_hash(psk)
-    s.mix_hash(e1_pub)
-    msg1 = e1_pub + s.encrypt_and_hash(b"")
-
-    # msg2: e, ee
-    e2_pub = X25519PrivateKey.from_private_bytes(e2_priv).public_key().public_bytes_raw()
-    s.mix_hash(e2_pub)
-    s.mix_key(dh(e2_priv, e1_pub))
-    msg2 = e2_pub + s.encrypt_and_hash(b"")
-
-    c1, c2 = s.split()
-    return msg1, msg2, c1, c2, s.h
+PROTOCOL = b"Noise_NNpsk0_25519_ChaChaPoly_SHA256"
+PROLOGUE = b"NoiseAPIInit\x00\x00"
+PSK = bytes(range(32))
+INITIATOR_EPHEMERAL = bytes([0x11]) * 32
+RESPONDER_EPHEMERAL = bytes([0x22]) * 32
 
 
 def with_header(payload: bytes) -> bytes:
@@ -107,33 +26,39 @@ def with_header(payload: bytes) -> bytes:
 
 
 def main() -> None:
-    psk = bytes(range(32))
-    e1_priv = bytes([0x11]) * 32
-    e2_priv = bytes([0x22]) * 32
-    prologue = b"NoiseAPIInit\x00\x00"
+    initiator = NoiseConnection.from_name(PROTOCOL)
+    initiator.set_as_initiator()
+    initiator.set_psks(PSK)
+    initiator.set_prologue(PROLOGUE)
+    initiator.set_keypair_from_private_bytes(Keypair.EPHEMERAL, INITIATOR_EPHEMERAL)
+    initiator.start_handshake()
 
-    msg1, msg2, c1, c2, h = handshake(psk, prologue, e1_priv, e2_priv)
+    responder = NoiseConnection.from_name(PROTOCOL)
+    responder.set_as_responder()
+    responder.set_psks(PSK)
+    responder.set_prologue(PROLOGUE)
+    responder.set_keypair_from_private_bytes(Keypair.EPHEMERAL, RESPONDER_EPHEMERAL)
+    responder.start_handshake()
 
-    # One transport frame each way: ESPHome's inner header is 4 bytes big endian.
-    # Message type 1 flows initiator to responder, type 2 the other way; both
-    # carry the same body so only the key direction differs.
-    frame_i2r = b"\x00\x01" + (0x0005).to_bytes(2, "big") + b"hello"
-    frame_r2i = b"\x00\x02" + (0x0005).to_bytes(2, "big") + b"hello"
-    # Print the whole wire frame (indicator + big-endian length + ciphertext),
-    # which is what the Kotlin encoder is compared against.
-    transport_i2r = with_header(c1.encrypt(frame_i2r, b""))
-    transport_r2i = with_header(c2.encrypt(frame_r2i, b""))
+    message1 = initiator.write_message()
+    responder.read_message(message1)
+    message2 = responder.write_message()
+    initiator.read_message(message2)
 
-    print("psk            =", psk.hex())
-    print("e1_priv        =", e1_priv.hex())
-    print("e2_priv        =", e2_priv.hex())
-    print("e1_pub         =", X25519PrivateKey.from_private_bytes(e1_priv).public_key().public_bytes_raw().hex())
-    print("e2_pub         =", X25519PrivateKey.from_private_bytes(e2_priv).public_key().public_bytes_raw().hex())
-    print("handshake_hash =", h.hex())
-    print("msg1           =", msg1.hex())
-    print("msg2           =", msg2.hex())
-    print("i2r_frame      =", transport_i2r.hex())
-    print("r2i_frame      =", transport_r2i.hex())
+    # ESPHome's transport frame: 4-byte fixed header inside the ciphertext.
+    inner_i2r = (1).to_bytes(2, "big") + (5).to_bytes(2, "big") + b"hello"
+    inner_r2i = (2).to_bytes(2, "big") + (5).to_bytes(2, "big") + b"hello"
+    frame_i2r = with_header(initiator.encrypt(inner_i2r))
+    frame_r2i = with_header(responder.encrypt(inner_r2i))
+
+    print("psk            =", PSK.hex())
+    print("e1_priv        =", INITIATOR_EPHEMERAL.hex())
+    print("e2_priv        =", RESPONDER_EPHEMERAL.hex())
+    print("msg1           =", message1.hex())
+    print("msg2           =", message2.hex())
+    print("i2r_frame      =", frame_i2r.hex())
+    print("r2i_frame      =", frame_r2i.hex())
+    print("psk_base64     =", base64.b64encode(PSK).decode())
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ class NoiseHandshake(
     fun writeMessage1(): ByteArray {
         check(role == Role.INITIATOR)
         symmetric.mixKeyAndHash(psk)
-        symmetric.mixHash(ephemeral.publicKey)
+        mixEphemeral(ephemeral.publicKey)
         return ephemeral.publicKey + symmetric.encryptAndHash(ByteArray(0))
     }
 
@@ -42,7 +42,7 @@ class NoiseHandshake(
         check(role == Role.RESPONDER)
         val publicKey = takePublicKey(message)
         symmetric.mixKeyAndHash(psk)
-        symmetric.mixHash(publicKey)
+        mixEphemeral(publicKey)
         remoteEphemeral = publicKey
         symmetric.decryptAndHash(message.copyOfRange(32, message.size))
     }
@@ -51,7 +51,7 @@ class NoiseHandshake(
     fun writeMessage2(): ByteArray {
         check(role == Role.RESPONDER)
         val remote = requireNotNull(remoteEphemeral) { "message 1 was not read yet" }
-        symmetric.mixHash(ephemeral.publicKey)
+        mixEphemeral(ephemeral.publicKey)
         symmetric.mixKey(X25519.scalarMult(ephemeral.privateKey, remote))
         return ephemeral.publicKey + symmetric.encryptAndHash(ByteArray(0))
     }
@@ -59,9 +59,19 @@ class NoiseHandshake(
     fun readMessage2(message: ByteArray) {
         check(role == Role.INITIATOR)
         val publicKey = takePublicKey(message)
-        symmetric.mixHash(publicKey)
+        mixEphemeral(publicKey)
         symmetric.mixKey(X25519.scalarMult(ephemeral.privateKey, publicKey))
         symmetric.decryptAndHash(message.copyOfRange(32, message.size))
+    }
+
+    /**
+     * The `e` token. In a PSK handshake the spec mixes the ephemeral into the
+     * chaining key as well, not just into the hash; without that the very first
+     * tag differs and every real client reports a bad key.
+     */
+    private fun mixEphemeral(publicKey: ByteArray) {
+        symmetric.mixHash(publicKey)
+        symmetric.mixKey(publicKey)
     }
 
     /**

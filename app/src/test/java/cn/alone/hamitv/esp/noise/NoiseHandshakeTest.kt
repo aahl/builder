@@ -5,6 +5,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import java.util.Base64
 import javax.crypto.AEADBadTagException
 
 /**
@@ -21,12 +22,12 @@ class NoiseHandshakeTest {
 
     private val expectedMessage1 =
         "7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13" +
-            "66bf64c5cbb260ac3183c475cbe90867"
+            "d1bc1a38b6793685dc7e2ffdf8ea0933"
     private val expectedMessage2 =
         "0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20" +
-            "6baf0cb4f2a0d4e5bb3ff3ad4360b874"
-    private val expectedInitiatorFrame = "0100195a21e9c8e1227f97526d65f66b39b80270710a6cc505c4e313"
-    private val expectedResponderFrame = "01001999794b828d93665b46e8150228aa426b48b03a0c90a1aaf742"
+            "7336b95933b321b1ae86673f689f5c9f"
+    private val expectedInitiatorFrame = "010019082c88d12532d93357b4d917b36aa2076fd8eeed5e36fda342"
+    private val expectedResponderFrame = "010019d9483bf1ef70e77e9ec152c77200da7c97baff42daed961d1b"
 
     @Test
     fun prologueBindsTheHelloFrame() {
@@ -70,6 +71,27 @@ class NoiseHandshakeTest {
         val answer = NoiseFrame.read(reply.inputStream(), requireNotNull(initiator.receiveCipher))
         assertEquals(2, answer.typeId)
         assertEquals("hello", answer.body.decodeToString())
+    }
+
+    /**
+     * Captured from aioesphomeapi 46.28.0 talking to this app. The old code
+     * agreed with its own reference but not with this frame, which is exactly
+     * how the "invalid encryption key" report slipped through.
+     */
+    @Test
+    fun authenticatesAFrameCapturedFromTheRealClient() {
+        val realPsk = Base64.getDecoder().decode("vPvWBPLVvQo/drg6oh2O0rkrJ6QvaIQlSfKKfJUpBio=")
+        val responder = NoiseHandshake(
+            realPsk,
+            NoiseHandshake.prologue(ByteArray(0)),
+            NoiseHandshake.Role.RESPONDER,
+        )
+        responder.readMessage1(
+            hex(
+                "3469a133b34129b776c1ac59b0d8c600101002ffe745a819d53bdd925e13a427" +
+                    "874da0999e04a58e104b3aaf0386fb97",
+            ),
+        )
     }
 
     @Test
@@ -124,4 +146,7 @@ class NoiseHandshakeTest {
     }
 
     private fun ByteArray.toHex() = joinToString("") { "%02x".format(it) }
+
+    private fun hex(value: String): ByteArray =
+        value.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
 }

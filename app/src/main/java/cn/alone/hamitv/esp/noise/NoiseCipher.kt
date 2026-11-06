@@ -1,9 +1,7 @@
 package cn.alone.hamitv.esp.noise
 
 import java.security.MessageDigest
-import javax.crypto.Cipher
 import javax.crypto.Mac
-import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /** SHA-256 helpers and the HKDF used by Noise (RFC 5869 with the Noise labels). */
@@ -38,6 +36,8 @@ internal object NoiseCrypto {
  * One direction of the transport cipher. The nonce is the 96-bit value Noise
  * prescribes: 32 zero bits followed by a little-endian 64-bit counter, which is
  * exactly the 12-byte IV ChaCha20-Poly1305 wants.
+ *
+ * The AEAD is our own: the TV's Android 9 has no JCA provider for it.
  */
 class CipherState(private val key: ByteArray?) {
 
@@ -47,20 +47,16 @@ class CipherState(private val key: ByteArray?) {
 
     fun encrypt(plaintext: ByteArray, aad: ByteArray): ByteArray {
         val key = key ?: return plaintext
-        val cipher = Cipher.getInstance("ChaCha20-Poly1305")
-        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "ChaCha20"), IvParameterSpec(nonceBytes()))
-        cipher.updateAAD(aad)
+        val bytes = nonceBytes()
         nonce++
-        return cipher.doFinal(plaintext)
+        return ChaCha20Poly1305.seal(key, bytes, aad, plaintext)
     }
 
     fun decrypt(ciphertext: ByteArray, aad: ByteArray): ByteArray {
         val key = key ?: return ciphertext
-        val cipher = Cipher.getInstance("ChaCha20-Poly1305")
-        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "ChaCha20"), IvParameterSpec(nonceBytes()))
-        cipher.updateAAD(aad)
+        val bytes = nonceBytes()
         nonce++
-        return cipher.doFinal(ciphertext)
+        return ChaCha20Poly1305.open(key, bytes, aad, ciphertext)
     }
 
     private fun nonceBytes(): ByteArray {

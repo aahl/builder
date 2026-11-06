@@ -125,8 +125,9 @@ HDMI1/2/3 = 23/24/25，TV = 1，AV = 2，VGA = 0。
 - 明文客户端连上加密设备时，服务端回一个带 `0x01` 标记的 reject 帧，HA 据此
   弹出「需要密钥」。
 
-X25519 用 BigInteger 实现（Android 没有 JCA 的 X25519，引入 BouncyCastle 要
-多 8MB）；ChaCha20-Poly1305 走系统 JCA（API 28 起可用）。
+X25519 用 BigInteger 实现，ChaCha20-Poly1305 也是自己按 RFC 8439 写的：电视的
+Android 9 没有这个 JCA provider（`No provider found for ChaCha20-Poly1305`），
+握手会在第一条加密消息就失败。两者都不引 BouncyCastle（多 8MB）。
 `tools/noise_reference.py` 是一份独立的 Python 参考实现，单元测试里的黄金向量
 由它生成——Kotlin 侧差一个字节就会失败。
 

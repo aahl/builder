@@ -1,16 +1,19 @@
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, StyleSheet, Image, ScrollView, ActivityIndicator, Pressable } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { ThemedView } from "@/components/ThemedView";
 import { ThemedText } from "@/components/ThemedText";
 import { StyledButton } from "@/components/StyledButton";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
 import useDetailStore from "@/stores/detailStore";
+import { PlayRecordManager } from "@/services/storage";
 import { FontAwesome } from "@expo/vector-icons";
 
 export default function DetailScreen() {
   const { q, source, id } = useLocalSearchParams<{ q: string; source?: string; id?: string }>();
   const router = useRouter();
+  const [lastWatchedIndex, setLastWatchedIndex] = useState<number | null>(null);
+  const [isReversed, setIsReversed] = useState(false);
 
   const {
     detail,
@@ -33,6 +36,24 @@ export default function DetailScreen() {
       abort();
     };
   }, [abort, init, q, source, id]);
+
+  // 读取该剧的播放记录，用于标记"上次看到第几集"
+  const loadLastWatched = useCallback(async () => {
+    if (!detail) return;
+    try {
+      const record = await PlayRecordManager.get(detail.source, detail.id.toString());
+      setLastWatchedIndex(record && record.index > 0 ? record.index - 1 : null);
+    } catch (error) {
+      console.info("Failed to load play record:", error);
+    }
+  }, [detail]);
+
+  // 从播放页返回时也会重新刷新，保证高亮的是最新进度
+  useFocusEffect(
+    useCallback(() => {
+      loadLastWatched();
+    }, [loadLastWatched])
+  );
 
   const handlePlay = (episodeIndex: number) => {
     if (!detail) return;
@@ -136,17 +157,37 @@ export default function DetailScreen() {
             </View>
           </View>
           <View style={styles.episodesContainer}>
-            <ThemedText style={styles.episodesTitle}>播放列表</ThemedText>
-            <ScrollView contentContainerStyle={styles.episodeList}>
-              {detail.episodes.map((episode, index) => (
-                <StyledButton
-                  key={index}
-                  style={styles.episodeButton}
-                  onPress={() => handlePlay(index)}
-                  text={`第 ${index + 1} 集`}
-                  textStyle={styles.episodeButtonText}
+            <View style={styles.episodesTitleRow}>
+              <ThemedText style={styles.episodesTitle}>播放列表</ThemedText>
+              {lastWatchedIndex !== null && (
+                <ThemedText style={styles.lastWatchedText}>上次看到第 {lastWatchedIndex + 1} 集</ThemedText>
+              )}
+              <StyledButton
+                variant="ghost"
+                style={styles.orderToggleButton}
+                onPress={() => setIsReversed((prev) => !prev)}
+                accessibilityLabel={isReversed ? "剧集正序排列" : "剧集倒序排列"}
+              >
+                <FontAwesome
+                  name={isReversed ? "sort-amount-asc" : "sort-amount-desc"}
+                  size={18}
+                  color={isReversed ? "#00bb5e" : "#ccc"}
                 />
-              ))}
+              </StyledButton>
+            </View>
+            <ScrollView contentContainerStyle={styles.episodeList}>
+              {Array.from({ length: detail.episodes.length }, (_, index) => index)
+                .sort((a, b) => (isReversed ? b - a : a - b))
+                .map((index) => (
+                  <StyledButton
+                    key={index}
+                    style={styles.episodeButton}
+                    onPress={() => handlePlay(index)}
+                    text={`第 ${index + 1} 集`}
+                    textStyle={styles.episodeButtonText}
+                    isSelected={lastWatchedIndex === index}
+                  />
+                ))}
             </ScrollView>
           </View>
         </View>
@@ -260,10 +301,24 @@ const styles = StyleSheet.create({
   episodesContainer: {
     marginTop: 20,
   },
+  episodesTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
   episodesTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    marginBottom: 10,
+  },
+  lastWatchedText: {
+    color: "#aaa",
+    fontSize: 14,
+    marginLeft: 12,
+  },
+  orderToggleButton: {
+    marginLeft: "auto",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   episodeList: {
     flexDirection: "row",

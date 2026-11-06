@@ -5,12 +5,26 @@ import useDetailStore from "@/stores/detailStore";
 import usePlayerStore from "@/stores/playerStore";
 
 export const SourceSelectionModal: React.FC = () => {
-  const { showSourceModal, setShowSourceModal } = usePlayerStore();
+  const { showSourceModal, setShowSourceModal, loadVideo, currentEpisodeIndex, status } = usePlayerStore();
   const { searchResults, detail, setDetail } = useDetailStore();
 
   const onSelectSource = (index: number) => {
-    if (searchResults[index].source !== detail?.source) {
-      setDetail(searchResults[index]);
+    const nextDetail = searchResults[index];
+    if (nextDetail && nextDetail.source !== detail?.source) {
+      // 播放页的 source/id 来自路由参数，setDetail 不会触发重新加载，这里显式换源并保留进度
+      const currentPosition = status?.isLoaded ? status.positionMillis : undefined;
+      const targetIndex = Math.min(
+        Math.max(currentEpisodeIndex, 0),
+        Math.max(nextDetail.episodes.length - 1, 0)
+      );
+      setDetail(nextDetail);
+      loadVideo({
+        source: nextDetail.source,
+        id: nextDetail.id.toString(),
+        title: nextDetail.title,
+        episodeIndex: targetIndex,
+        position: currentPosition,
+      });
     }
     setShowSourceModal(false);
   };

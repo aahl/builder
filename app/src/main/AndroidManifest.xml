@@ -30,6 +30,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <!-- CleanYourTV shows this as a dock card instead of a plain tile.
+                 The filter and the meta-data must sit on the activity that has
+                 LEANBACK_LAUNCHER, see docs/specs/card.md in that project. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="com.gathin.tvhome.category.DOCK_CARD" />
+            </intent-filter>
+            <meta-data
+                android:name="com.gathin.tvhome.card"
+                android:resource="@xml/module_card" />
         </activity>
 
         <activity

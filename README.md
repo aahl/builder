@@ -177,6 +177,20 @@ stopped：`logcat` 里是 `PackageManager: stop: <pkg> for user 0`，紧跟在
 
 `BOOT_COMPLETED` / `MY_PACKAGE_REPLACED` 的接收器保留着：厂商策略变了这条路是免费的。
 
+### CleanYourTV 卡片
+
+`MainActivity` 另外声明了 `com.gathin.tvhome.category.DOCK_CARD` 和
+`@xml/module_card`（label `HA MiTV`，caption `ESPHome bridge`，accent `#4c9aff`）。
+装到跑 CleanYourTV 的电视上，桌面会问一次「Show / Keep hidden」；答 Show 之后
+这张卡顶替普通磁贴，摆在字母表网格前面，点开就是配置台。
+
+这和上面的自启动是两条独立的路：CleanYourTV 的卡片只是桌面读 `PackageManager`
+元数据画出来的磁贴，不会在开机时拉起进程；要开机自启还是靠 `HomeActivity`。
+两边都在也不冲突——我们不是默认桌面时，`HomeActivity` 就是普通的一个入口。
+
+卡片值必须写成字面量（spec 1 不解析 `@string`），label 一旦改动，桌面会重新问
+用户一次，所以定下来别改。
+
 ## 自动发现
 
 用 Android 的 `NsdManager` 广播 `_esphomelib._tcp.local.`，HA 的 zeroconf 流程

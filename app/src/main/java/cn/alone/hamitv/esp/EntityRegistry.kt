@@ -11,7 +11,14 @@ data class ButtonEntity(
     val command: CommandSpec,
 )
 
-/** One select entity; [options] are the values HA can pick, in table order. */
+/** A camera the TV knows about; [name] is the value HA shows. */
+data class CameraOption(val name: String, val did: String)
+
+/**
+ * One select entity. Static selects carry their [options] and the matching
+ * [commands]; `source: "cameras"` selects ask [cameraOptions] instead, because
+ * the camera list only exists at runtime.
+ */
 data class SelectEntity(
     val objectId: String,
     val key: Int,
@@ -19,7 +26,25 @@ data class SelectEntity(
     val icon: String,
     val options: List<String>,
     val commands: Map<String, CommandSpec>,
-)
+    val source: String? = null,
+    val cameraOptions: (() -> List<CameraOption>)? = null,
+) {
+
+    /** Values HA can pick right now. */
+    fun optionNames(): List<String> = cameraOptions?.invoke()?.map { it.name } ?: options
+
+    /** Resolves a value back to the command it runs. */
+    fun commandFor(option: String): CommandSpec? {
+        val cameras = cameraOptions ?: return commands[option]
+        val camera = cameras().firstOrNull { it.name == option } ?: return null
+        return CommandSpec(
+            id = "${objectId}_${camera.did}",
+            name = option,
+            type = "camera_pip",
+            extras = mapOf("did" to camera.did),
+        )
+    }
+}
 
 data class TextSensorEntity(
     val objectId: String,
@@ -32,7 +57,10 @@ data class TextSensorEntity(
  * edit rather than a rebuild. Keys must stay stable across restarts because HA
  * uses them to match entities to its registry entries.
  */
-class EntityRegistry(commands: List<CommandSpec>) {
+class EntityRegistry(
+    commands: List<CommandSpec>,
+    private val cameras: () -> List<CameraOption> = { emptyList() },
+) {
 
     val buttons: List<ButtonEntity> = commands
         .filterNot { it.isSelect }
@@ -48,7 +76,9 @@ class EntityRegistry(commands: List<CommandSpec>) {
 
     val selects: List<SelectEntity> = commands
         .filter { it.isSelect }
-        .map { command ->
+        .mapNotNull { command ->
+            val dynamic = command.source == "cameras"
+            if (!dynamic && command.options.isEmpty()) return@mapNotNull null
             SelectEntity(
                 objectId = objectId(command.id),
                 key = keyOf(objectId(command.id)),
@@ -56,6 +86,8 @@ class EntityRegistry(commands: List<CommandSpec>) {
                 icon = command.icon ?: "mdi:form-dropdown",
                 options = command.options.map { it.name },
                 commands = command.options.associate { it.name to it.spec },
+                source = command.source,
+                cameraOptions = if (dynamic) cameras else null,
             )
         }
 

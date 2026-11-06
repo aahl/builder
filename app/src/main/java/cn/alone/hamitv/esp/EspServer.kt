@@ -89,7 +89,7 @@ class EspServer(
         }
         server = socket
         running = true
-        registry = EntityRegistry(CommandTable.parse(store.readCommands()))
+        registry = buildRegistry()
         thread(name = "esp-accept", isDaemon = true) { acceptLoop(socket) }
         log(
             "esp: listening on ${store.espPort}, ${registry.buttons.size} buttons, " +
@@ -117,8 +117,16 @@ class EspServer(
     }
 
     /** Rebuilds entities from the command table and drops clients so HA re-lists. */
+    private fun buildRegistry(): EntityRegistry =
+        EntityRegistry(CommandTable.parse(store.readCommands())) {
+            // The camera service may not be up yet; an empty list just means the
+            // dynamic select is skipped until a reconnect.
+            runCatching { executor.cameras() }.getOrDefault(emptyList())
+                .map { CameraOption(it.roomName, it.did) }
+        }
+
     fun reload() {
-        registry = EntityRegistry(CommandTable.parse(store.readCommands()))
+        registry = buildRegistry()
         connections.forEach { it.close() }
         // The advertised name is the device name, so a rename needs a new record.
         if (store.deviceName != advertisedName) advertise()
@@ -158,7 +166,19 @@ class EspServer(
 
     internal fun execute(button: ButtonEntity): String = describe(button.command, run(button.command))
 
-    internal fun run(spec: CommandSpec): Result<String> = executor.run(spec)
+    internal fun run(spec: CommandSpec): Result<String> {
+        val result = executor.run(spec)
+        // Closing the window invalidates whatever the camera select was showing.
+        if (result.isSuccess && spec.type == "camera_close") clearCameraSelects()
+        return result
+    }
+
+    private fun clearCameraSelects() {
+        registry.selects.filter { it.source == "cameras" }.forEach { select ->
+            selectStates.remove(select.key)
+            connections.forEach { it.pushSelectState(select, null) }
+        }
+    }
 
     internal fun describe(spec: CommandSpec, result: Result<String>): String = result.fold(
         onSuccess = { "${spec.name}: $it" },
@@ -202,7 +222,7 @@ class EspServer(
         const val API_VERSION_MAJOR = 1
         const val API_VERSION_MINOR = 13
         const val ESPHOME_VERSION = "2025.12.0"
-        const val PROJECT_VERSION = "0.1.1-a4"
+        const val PROJECT_VERSION = "0.1.1-a5"
     }
 }
 
@@ -414,6 +434,9 @@ internal class EspConnection(
             )
         }
         registry.selects.forEach { select ->
+            val options = select.optionNames()
+            // A select with no values is rejected by HA; skip it for this session.
+            if (options.isEmpty()) return@forEach
             send(
                 EspMessageId.LIST_ENTITIES_SELECT_RESPONSE,
                 ListEntitiesSelectResponse.newBuilder()
@@ -421,7 +444,7 @@ internal class EspConnection(
                     .setKey(select.key)
                     .setName(select.name)
                     .setIcon(select.icon)
-                    .addAllOptions(select.options)
+                    .addAllOptions(options)
                     .build()
                     .toByteArray(),
             )
@@ -460,7 +483,7 @@ internal class EspConnection(
             server.log("esp: unknown select key ${request.key}")
             return
         }
-        val command = select.commands[request.state]
+        val command = select.commandFor(request.state)
         if (command == null) {
             // HA should only send values we advertised; answer with the truth.
             server.log("esp: '${request.state}' is not an option of ${select.objectId}")

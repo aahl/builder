@@ -15,7 +15,8 @@ import kotlinx.serialization.json.intOrNull
  *  - activity / service / broadcast: build an Intent and fire it
  *  - camera_pip / camera_close: drive the Xiaomi camera binder
  *  - select: not executed directly; it becomes a select entity whose
- *    [options] are commands, one per selectable value
+ *    [options] are commands, one per selectable value. With `source: "cameras"`
+ *    the values come from the camera binder instead of the table.
  */
 data class CommandSpec(
     val id: String,
@@ -27,6 +28,8 @@ data class CommandSpec(
     val categories: List<String> = emptyList(),
     val extras: Map<String, Any> = emptyMap(),
     val options: List<SelectOption> = emptyList(),
+    /** Only for selects: where the values come from, e.g. `cameras`. */
+    val source: String? = null,
 ) {
     val isSelect: Boolean get() = type == "select"
 }
@@ -43,8 +46,11 @@ object CommandTable {
         val root = runCatching { json.parseToJsonElement(raw) }.getOrNull() as? JsonArray ?: return emptyList()
         return root.mapNotNull { element ->
             val obj = element as? JsonObject ?: return@mapNotNull null
-            // A select without values has nothing to show.
-            command(obj)?.takeIf { spec -> !spec.isSelect || spec.options.isNotEmpty() }
+            // A select without values has nothing to show, unless the values
+            // are generated at runtime from a source.
+            command(obj)?.takeIf { spec ->
+                !spec.isSelect || spec.options.isNotEmpty() || spec.source != null
+            }
         }
     }
 
@@ -70,6 +76,11 @@ object CommandTable {
             categories = obj.strings("categories"),
             extras = obj.extras(),
             options = if (type == "select") obj.selectOptions() else emptyList(),
+            source = if (type == "select") {
+                obj.text("source")?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
+            } else {
+                null
+            },
         )
     }
 

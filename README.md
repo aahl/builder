@@ -101,6 +101,21 @@ HDMI1/2/3 = 23/24/25，TV = 1，AV = 2，VGA = 0。
 为 unknown（`missing_state`）。命令执行失败不会更新状态，错误留在
 `text_sensor.mitv_last_command` 里。
 
+### 动态选项（摄像头）
+
+`source: "cameras"` 的 select 不写 `options`，取值来自电视上的摄像头服务，
+选中一个就按该摄像头的 `did` 开画中画：
+
+```json
+{ "id": "camera_pip", "name": "摄像头画中画", "type": "select",
+  "source": "cameras", "icon": "mdi:cctv" }
+```
+
+选项是摄像头的房间名（`CameraBinder.cameras()`），每次 HA 拉实体列表时重新枚举，
+所以摄像头增减后重连即可看到。摄像头服务没起来时这个实体不会出现（空选项的
+select 会被 HA 拒绝），而不是给一个点了没反应的控件。关掉画中画会把它的状态
+清成 unknown。
+
 ## 加密
 
 默认关闭，走明文。配置台「加密」卡片可以一键启用：生成 32 字节 PSK 并以 base64

@@ -14,6 +14,9 @@ class CommandExecutor(private val context: Context) {
 
     private val camera by lazy { CameraBinder(context) }
 
+    /** Cameras the Xiaomi service knows about; empty when it is not running. */
+    fun cameras(): List<CameraBinder.Camera> = camera.cameras()
+
     fun run(spec: CommandSpec): Result<String> = runCatching {
         when (spec.type) {
             "activity" -> {

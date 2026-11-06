@@ -100,25 +100,37 @@ class ConfigStore(context: Context) {
         migrate(if (commandsFile.exists()) commandsFile.readText() else DEFAULT_COMMANDS)
 
     /**
-     * Older tables have no select entity, so the input source would silently be
-     * missing after an upgrade. Fold the default select in once, then leave the
-     * table alone: from then on the file is the single source of truth.
+     * New default entities would silently be missing after an upgrade, so each
+     * one is folded in once, keyed by the table version. After that the file is
+     * the single source of truth and is never rewritten again.
      */
     private fun migrate(raw: String): String {
-        if (prefs.getInt(KEY_COMMANDS_VERSION, 1) >= COMMANDS_VERSION) return raw
+        val version = prefs.getInt(KEY_COMMANDS_VERSION, 1)
+        if (version >= COMMANDS_VERSION) return raw
         val array = runCatching { Json.parseToJsonElement(raw) as JsonArray }.getOrNull()
-        if (array != null && array.none { it.isSelect() }) {
-            val merged = JsonArray(listOf(DEFAULT_SELECT) + array).toString()
-            runCatching { commandsFile.writeText(merged) }
-            prefs.edit().putInt(KEY_COMMANDS_VERSION, COMMANDS_VERSION).apply()
-            return merged
+        var out = raw
+        if (array != null) {
+            val additions = buildList {
+                if (version < 2 && array.none { it.isSelect() }) add(DEFAULT_SELECT)
+                if (version < 3 && array.none { it.isCameraSelect() }) add(DEFAULT_CAMERA_SELECT)
+            }
+            if (additions.isNotEmpty()) {
+                out = JsonArray(additions + array).toString()
+                runCatching { commandsFile.writeText(out) }
+            }
         }
         prefs.edit().putInt(KEY_COMMANDS_VERSION, COMMANDS_VERSION).apply()
-        return raw
+        return out
     }
 
     private fun kotlinx.serialization.json.JsonElement.isSelect(): Boolean =
         ((this as? JsonObject)?.get("type") as? JsonPrimitive)?.content == "select"
+
+    private fun kotlinx.serialization.json.JsonElement.isCameraSelect(): Boolean {
+        val obj = this as? JsonObject ?: return false
+        if (((obj["type"] as? JsonPrimitive)?.content) != "select") return false
+        return ((obj["source"] as? JsonPrimitive)?.content) == "cameras"
+    }
 
     /** Returns null on success, or a human readable error when the JSON is invalid. */
     fun writeCommands(raw: String): String? {
@@ -149,7 +161,7 @@ class ConfigStore(context: Context) {
         private const val KEY_NOISE_PSK = "noise_psk"
         private const val PSK_BYTES = 32
         private const val KEY_COMMANDS_VERSION = "commands_version"
-        private const val COMMANDS_VERSION = 2
+        private const val COMMANDS_VERSION = 3
 
         private val DEFAULT_SELECT = Json.parseToJsonElement(
             """
@@ -193,6 +205,19 @@ class ConfigStore(context: Context) {
             """.trimIndent(),
         )
 
+        /** Values come from the camera binder, so no options are listed here. */
+        private val DEFAULT_CAMERA_SELECT = Json.parseToJsonElement(
+            """
+              {
+                "id": "camera_pip",
+                "name": "摄像头画中画",
+                "type": "select",
+                "source": "cameras",
+                "icon": "mdi:cctv"
+              }
+            """.trimIndent(),
+        )
+
         private val DEFAULT_COMMANDS = """
             [
               {
@@ -231,6 +256,13 @@ class ConfigStore(context: Context) {
                     "component": "com.xiaomi.mitv.tvplayer/.dtmb.DTMBActivity"
                   }
                 ]
+              },
+              {
+                "id": "camera_pip",
+                "name": "摄像头画中画",
+                "type": "select",
+                "source": "cameras",
+                "icon": "mdi:cctv"
               },
               {
                 "id": "show_panel",

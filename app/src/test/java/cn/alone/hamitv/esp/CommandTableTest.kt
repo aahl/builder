@@ -94,6 +94,40 @@ class CommandTableTest {
     }
 
     @Test
+    fun cameraSelectTakesItsValuesFromTheBinder() {
+        val registry = EntityRegistry(
+            CommandTable.parse(
+                """[{"id":"camera_pip","name":"摄像头画中画","type":"select","source":"cameras"}]""",
+            ),
+        ) {
+            listOf(
+                CameraOption("过道 门口摄像头", "1021043316"),
+                CameraOption("阳台 猫房摄像头", "1176488017"),
+            )
+        }
+
+        val select = registry.selects.single()
+        assertEquals(listOf("过道 门口摄像头", "阳台 猫房摄像头"), select.optionNames())
+
+        val command = requireNotNull(select.commandFor("阳台 猫房摄像头"))
+        assertEquals("camera_pip", command.type)
+        assertEquals("1176488017", command.extras["did"])
+        // A value that is not a known camera must not run anything.
+        assertNull(select.commandFor("不存在的摄像头"))
+    }
+
+    @Test
+    fun cameraSelectSurvivesAnEmptyCameraListButAdvertisesNothing() {
+        val select = EntityRegistry(
+            CommandTable.parse(
+                """[{"id":"camera_pip","type":"select","source":"cameras"}]""",
+            ),
+        ).selects.single()
+
+        assertTrue(select.optionNames().isEmpty())
+    }
+
+    @Test
     fun duplicateOptionNamesAreIgnored() {
         val select = EntityRegistry(
             CommandTable.parse(

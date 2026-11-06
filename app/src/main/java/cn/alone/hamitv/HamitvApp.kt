@@ -6,6 +6,8 @@ import android.app.Application
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import cn.alone.hamitv.config.ConfigStore
@@ -46,11 +48,18 @@ class HamitvApp : Application() {
         if (AgentService.isRunning) return
         runCatching { AgentService.start(this) }
             .onFailure { Log.e(TAG, "cannot start the agent", it) }
-        applyKeepAdb(this)
+        // The security centre may clear adb_enabled later than our first screen,
+        // so keep looking for a while instead of writing once and losing.
+        ADB_RETRY_DELAYS_MS.forEach { delay ->
+            Handler(Looper.getMainLooper()).postDelayed({ applyKeepAdb(this) }, delay)
+        }
     }
 
     companion object {
         private const val TAG = "HamitvApp"
+
+        /** 30s, 90s, 3min, 5min after the first screen: the vendor clears the flag somewhere in there. */
+        private val ADB_RETRY_DELAYS_MS = longArrayOf(30_000, 90_000, 180_000, 300_000)
 
         /**
          * Xiaomi's security centre closes network ADB while it scans packages at
@@ -69,8 +78,11 @@ class HamitvApp : Application() {
                 Log.w(TAG, "keep_adb is on but WRITE_SECURE_SETTINGS was never granted")
                 return
             }
+            val current = Settings.Global.getInt(context.contentResolver, "adb_enabled", 0)
+            Log.d(TAG, "adb_enabled=$current")
+            if (current == 1) return
             runCatching { Settings.Global.putInt(context.contentResolver, "adb_enabled", 1) }
-                .onSuccess { Log.i(TAG, "re-enabled adb after boot") }
+                .onSuccess { Log.i(TAG, "adb_enabled was $current, set back to 1") }
                 .onFailure { Log.w(TAG, "cannot re-enable adb", it) }
         }
     }

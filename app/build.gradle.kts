@@ -18,8 +18,8 @@ android {
         applicationId = (findProperty("appId") as String?) ?: "com.ts.launcher"
         minSdk = 28
         targetSdk = 34
-        versionCode = 11
-        versionName = "0.2.0-a5"
+        versionCode = 12
+        versionName = "0.2.0-a6"
     }
 
     // Pin the debug signing key to an explicit file when CI provides one,

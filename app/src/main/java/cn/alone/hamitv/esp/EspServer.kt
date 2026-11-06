@@ -256,7 +256,7 @@ class EspServer(
         const val API_VERSION_MAJOR = 1
         const val API_VERSION_MINOR = 13
         const val ESPHOME_VERSION = "2025.12.0"
-        const val PROJECT_VERSION = "0.2.0-a5"
+        const val PROJECT_VERSION = "0.2.0-a6"
 
         /** Backoff for the camera probe: the TV publishes that service long after we start. */
         private val CAMERA_PROBE_DELAYS_MS = longArrayOf(3_000, 8_000, 20_000, 45_000, 90_000, 180_000)

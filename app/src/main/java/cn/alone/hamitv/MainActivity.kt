@@ -41,9 +41,10 @@ class MainActivity : AppCompatActivity() {
         // enabled for the app. There is nothing to show then: bring the agent
         // up and hand the screen straight back, or the TV would sit on the
         // pairing page after every boot.
-        val autostart = !AgentService.isRunning && SystemClock.elapsedRealtime() < AUTOSTART_WINDOW_MS
+        val launchedByAutostart =
+            !AgentService.isRunning && SystemClock.elapsedRealtime() < AUTOSTART_WINDOW_MS
         AgentService.start(this)
-        if (autostart) {
+        if (launchedByAutostart) {
             finish()
             return
         }

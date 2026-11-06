@@ -28,9 +28,13 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Hamitv">
 
+        <!-- Own task: the launcher starts tiles with NEW_TASK|RESET_TASK_IF_NEEDED,
+             and sharing the home activity's affinity made the system "reset" that
+             task back to the launcher instead of showing this screen. -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:taskAffinity="cn.alone.hamitv.console">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

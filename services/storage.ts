@@ -9,6 +9,7 @@ const STORAGE_KEYS = {
   FAVORITES: "mytv_favorites",
   PLAY_RECORDS: "mytv_play_records",
   SEARCH_HISTORY: "mytv_search_history",
+  EPISODE_ORDER: "mytv_episode_order",
 } as const;
 
 // --- Type Definitions (aligned with api.ts) ---
@@ -78,6 +79,35 @@ export class PlayerSettingsManager {
 
   static async clearAll(): Promise<void> {
     await AsyncStorage.removeItem(STORAGE_KEYS.PLAYER_SETTINGS);
+  }
+}
+
+// --- EpisodeOrderManager (Uses AsyncStorage, 按剧记住剧集列表是否倒序) ---
+export class EpisodeOrderManager {
+  static async getAll(): Promise<Record<string, boolean>> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.EPISODE_ORDER);
+      return data ? JSON.parse(data) : {};
+    } catch (error) {
+      console.info("Failed to get episode order settings:", error);
+      return {};
+    }
+  }
+
+  static async get(source: string, id: string): Promise<boolean> {
+    const allSettings = await this.getAll();
+    return allSettings[generateKey(source, id)] === true;
+  }
+
+  static async save(source: string, id: string, reversed: boolean): Promise<void> {
+    const allSettings = await this.getAll();
+    const key = generateKey(source, id);
+    if (reversed) {
+      allSettings[key] = true;
+    } else {
+      delete allSettings[key];
+    }
+    await AsyncStorage.setItem(STORAGE_KEYS.EPISODE_ORDER, JSON.stringify(allSettings));
   }
 }
 

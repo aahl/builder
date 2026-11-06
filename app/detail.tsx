@@ -6,7 +6,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { StyledButton } from "@/components/StyledButton";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
 import useDetailStore from "@/stores/detailStore";
-import { PlayRecordManager } from "@/services/storage";
+import { PlayRecordManager, EpisodeOrderManager } from "@/services/storage";
 import { FontAwesome } from "@expo/vector-icons";
 
 export default function DetailScreen() {
@@ -37,16 +37,31 @@ export default function DetailScreen() {
     };
   }, [abort, init, q, source, id]);
 
-  // 读取该剧的播放记录，用于标记"上次看到第几集"
+  // 读取该剧的播放记录与剧集排序偏好
   const loadLastWatched = useCallback(async () => {
     if (!detail) return;
     try {
-      const record = await PlayRecordManager.get(detail.source, detail.id.toString());
+      const [record, reversed] = await Promise.all([
+        PlayRecordManager.get(detail.source, detail.id.toString()),
+        EpisodeOrderManager.get(detail.source, detail.id.toString()),
+      ]);
       setLastWatchedIndex(record && record.index > 0 ? record.index - 1 : null);
+      setIsReversed(reversed);
     } catch (error) {
       console.info("Failed to load play record:", error);
     }
   }, [detail]);
+
+  // 倒序状态按剧持久化，换剧或重启后保持上次选择
+  const toggleEpisodeOrder = () => {
+    const next = !isReversed;
+    setIsReversed(next);
+    if (detail) {
+      EpisodeOrderManager.save(detail.source, detail.id.toString(), next).catch((error) =>
+        console.info("Failed to save episode order:", error)
+      );
+    }
+  };
 
   // 从播放页返回时也会重新刷新，保证高亮的是最新进度
   useFocusEffect(
@@ -165,7 +180,7 @@ export default function DetailScreen() {
               <StyledButton
                 variant="ghost"
                 style={styles.orderToggleButton}
-                onPress={() => setIsReversed((prev) => !prev)}
+                onPress={toggleEpisodeOrder}
                 accessibilityLabel={isReversed ? "剧集正序排列" : "剧集倒序排列"}
               >
                 <FontAwesome

@@ -96,6 +96,32 @@ class EspServer(
                 "${registry.selects.size} selects, encryption ${if (store.noiseEnabled) "on" else "off"}",
         )
         advertise()
+        probeCamerasLater(0)
+    }
+
+    /**
+     * At boot the Xiaomi camera service is usually not published yet, and a
+     * dynamic select with no options is dropped for the whole session
+     * (see listEntities). Poll until it answers, then re-list once so HA picks
+     * the select up without waiting for a reconnect.
+     */
+    private fun probeCamerasLater(attempt: Int) {
+        if (attempt >= CAMERA_PROBE_DELAYS_MS.size) return
+        thread(name = "esp-camera-probe", isDaemon = true) {
+            Thread.sleep(CAMERA_PROBE_DELAYS_MS[attempt])
+            if (!running) return@thread
+            val live = runCatching { executor.cameras() }.getOrDefault(emptyList())
+            if (live.isEmpty()) {
+                probeCamerasLater(attempt + 1)
+                return@thread
+            }
+            val announced = registry.selects
+                .filter { it.source == "cameras" }
+                .sumOf { it.optionNames().size }
+            if (live.size == announced) return@thread
+            log("esp: camera list is up (${live.size}), re-listing entities")
+            reload()
+        }
     }
 
     @Synchronized
@@ -230,7 +256,10 @@ class EspServer(
         const val API_VERSION_MAJOR = 1
         const val API_VERSION_MINOR = 13
         const val ESPHOME_VERSION = "2025.12.0"
-        const val PROJECT_VERSION = "0.1.1-a7"
+        const val PROJECT_VERSION = "0.2.0-a2"
+
+        /** Backoff for the camera probe: the TV publishes that service long after we start. */
+        private val CAMERA_PROBE_DELAYS_MS = longArrayOf(3_000, 8_000, 20_000, 45_000, 90_000, 180_000)
     }
 }
 

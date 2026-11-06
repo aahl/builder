@@ -23,7 +23,17 @@ const useAuthStore = create<AuthState>((set) => ({
       return;
     }
     try {
-      const serverConfig = useSettingsStore.getState().serverConfig;
+      // 冷启动时 serverConfig 可能仍在请求中，先等一次，避免把"配置未就绪"误判为需要登录
+      let serverConfig = useSettingsStore.getState().serverConfig;
+      if (!serverConfig) {
+        await useSettingsStore.getState().fetchServerConfig();
+        serverConfig = useSettingsStore.getState().serverConfig;
+      }
+      if (!serverConfig) {
+        // 配置拉取失败（网络或地址不可用），不弹登录框，避免无密码服务器被误报
+        set({ isLoggedIn: false });
+        return;
+      }
       const cookies = await Cookies.get(api.baseURL);
       if (serverConfig && serverConfig.StorageType === "localstorage" && !cookies.auth) {
         const loginResult = await api.login().catch(() => {

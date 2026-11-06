@@ -32,6 +32,10 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.security.MessageDigest
 import java.util.TimeZone
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
@@ -110,19 +114,38 @@ class EspServer(
         thread(name = "esp-camera-probe", isDaemon = true) {
             Thread.sleep(CAMERA_PROBE_DELAYS_MS[attempt])
             if (!running) return@thread
-            val live = runCatching { executor.cameras() }.getOrDefault(emptyList())
+            val live = enumerateCameras()
             if (live.isEmpty()) {
                 probeCamerasLater(attempt + 1)
                 return@thread
             }
-            val announced = registry.selects
-                .filter { it.source == "cameras" }
-                .sumOf { it.optionNames().size }
-            if (live.size == announced) return@thread
-            log("esp: camera list is up (${live.size}), re-listing entities")
-            reload()
+            // HA lists entities once, when the integration is set up, and never
+            // again for a live connection: what this session announced is what HA
+            // shows. Record the list so the next connection (or boot) announces
+            // the select with real values.
+            log("esp: camera list is up (${live.size}), cached for the next connection")
         }
     }
+
+    /**
+     * Live camera list. Every successful call also becomes the cached one: the
+     * camera service is published well after us at boot, and the options we
+     * announce are what HA keeps for the whole session.
+     */
+    private fun enumerateCameras(): List<CameraOption> {
+        val live = runCatching { executor.cameras() }.getOrDefault(emptyList())
+            .map { CameraOption(it.roomName, it.did) }
+        if (live.isNotEmpty()) {
+            store.cachedCameras = runCatching {
+                Json.encodeToString(live.map { CachedCamera(it.name, it.did) })
+            }.getOrNull()
+        }
+        return live
+    }
+
+    private fun cachedCameras(): List<CameraOption> = runCatching {
+        Json.decodeFromString<List<CachedCamera>>(store.cachedCameras.orEmpty())
+    }.getOrDefault(emptyList()).map { CameraOption(it.name, it.did) }
 
     @Synchronized
     fun stop() {
@@ -145,10 +168,11 @@ class EspServer(
     /** Rebuilds entities from the command table and drops clients so HA re-lists. */
     private fun buildRegistry(): EntityRegistry =
         EntityRegistry(CommandTable.parse(store.readCommands())) {
-            // The camera service may not be up yet; an empty list just means the
-            // dynamic select is skipped until a reconnect.
-            runCatching { executor.cameras() }.getOrDefault(emptyList())
-                .map { CameraOption(it.roomName, it.did) }
+            // Announce from the last known list when the camera service is not up
+            // yet. HA only enumerates entities when the integration starts, so a
+            // session that announces no options hides the select until someone
+            // reloads the integration by hand.
+            enumerateCameras().ifEmpty { cachedCameras() }
         }
 
     fun reload() {
@@ -256,7 +280,7 @@ class EspServer(
         const val API_VERSION_MAJOR = 1
         const val API_VERSION_MINOR = 13
         const val ESPHOME_VERSION = "2025.12.0"
-        const val PROJECT_VERSION = "0.2.0-a6"
+        const val PROJECT_VERSION = "0.2.0-a7"
 
         /** Backoff for the camera probe: the TV publishes that service long after we start. */
         private val CAMERA_PROBE_DELAYS_MS = longArrayOf(3_000, 8_000, 20_000, 45_000, 90_000, 180_000)
@@ -559,3 +583,7 @@ internal class EspConnection(
         }
     }
 }
+
+/** What we remember about a camera between boots; the did is what actually launches it. */
+@Serializable
+private data class CachedCamera(val name: String, val did: String)

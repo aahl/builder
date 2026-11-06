@@ -159,9 +159,26 @@ Android 9 没有这个 JCA provider（`No provider found for ChaCha20-Poly1305`�
 - 电池优化豁免：**不做**。这台电视的 `dumpsys deviceidle enabled` 是 0，Doze 控制器
   根本没启用，申请豁免是纯粹的空操作（弹窗还多一步）
 
-**做不到的**：force-stop（包括厂商「一键清理」里的强制停止）之后不会自启，系统的
-alarm 和 job 也一并被取消。开机能否自启取决于电视的「自启动管理」，属于厂商策略，
-App 无法绕过——界面上给了提示，长按 OK 打开系统应用详情页去授权。
+**`BOOT_COMPLETED` 在这台电视上收不到**。安全中心在开机扫包时就把非白名单应用置成
+stopped：`logcat` 里是 `PackageManager: stop: <pkg> for user 0`，紧跟在
+`MitvConfigParser: Parse mitv_security_center.xml start` 后面，配置在系统分区里，
+没有 root 改不了。stopped 的包收不到任何广播，`BOOT_COMPLETED` 和
+`MY_PACKAGE_REPLACED` 都不会到，alarm / job 也一并失效。
+
+同一次开机里原厂桌面 `com.spocky.projengmenu` 也被置了 stopped，但它照样起来了——
+系统拉起 home 组件不受这个标记影响。所以开机钩子只能是 home：
+
+- `HomeActivity` 声明 `CATEGORY_HOME`，透明主题、不画窗口
+- 被拉起时先 `AgentService.start()`，再把画面交还给原厂桌面，然后 `finish()`
+- 把本应用设为默认桌面（一次性）：`adb shell cmd package set-home-activity
+  cn.alone.hamitv/.HomeActivity`；这条命令不存在时用 `am start -a
+  android.intent.action.MAIN -c android.intent.category.HOME` 在电视上选一次「始终」
+
+副作用是按 HOME 键会先经过我们（无窗口，只有一次任务切换），再进原厂桌面。找不到
+其它桌面时 `HomeActivity` 会退化成应用列表，避免电视停在黑屏上。
+
+`BOOT_COMPLETED` / `MY_PACKAGE_REPLACED` 的接收器保留着：如果哪天厂商策略变了，
+这条路是免费的。
 
 ## 自动发现
 

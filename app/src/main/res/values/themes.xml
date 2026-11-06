@@ -3,4 +3,8 @@
     <style name="Theme.Hamitv" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowBackground">#101418</item>
     </style>
+
+    <!-- No window of our own: the home activity hands the screen straight to
+         the launcher the owner uses, so anything drawn here would flash. -->
+    <style name="Theme.Hamitv.Home" parent="@android:style/Theme.Translucent.NoTitleBar" />
 </resources>

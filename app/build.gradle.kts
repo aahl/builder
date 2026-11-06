@@ -10,11 +10,16 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "cn.alone.hamitv"
+        // The security centre's allowlist (mitv_security_center.xml, printed at boot by
+        // MitvConfigParser) is matched on the package name only, and it is what lets this
+        // app be started at boot. com.ts.launcher is the allowlisted identity used by
+        // CleanYourTV for the same purpose; override with -PappId=... if that name ever
+        // stops working on a set.
+        applicationId = (findProperty("appId") as String?) ?: "com.ts.launcher"
         minSdk = 28
         targetSdk = 34
-        versionCode = 5
-        versionName = "0.1.1-a10"
+        versionCode = 6
+        versionName = "0.2.0-a1"
     }
 
     // Pin the debug signing key to an explicit file when CI provides one,

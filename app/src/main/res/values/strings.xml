@@ -2,5 +2,6 @@
 <resources>
     <string name="app_name">HA MiTV</string>
     <string name="pair_hint">浏览器打开上面的地址，输入 4 位配对码 · 按 OK 键重新生成</string>
+    <string name="home_fallback">没找到电视桌面，选择要打开的应用</string>
     <string name="autostart_hint">在电视桌面的「应用自启动」里勾选本应用，开机后会自动运行 · 长按 OK 打开应用详情</string>
 </resources>

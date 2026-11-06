@@ -26,7 +26,7 @@ class NoiseHandshakeTest {
         "0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20" +
             "6baf0cb4f2a0d4e5bb3ff3ad4360b874"
     private val expectedInitiatorFrame = "0100195a21e9c8e1227f97526d65f66b39b80270710a6cc505c4e313"
-    private val expectedResponderFrame = "010019997a4b828d93665b46d2d479645592bcd3508276a47875e1eb"
+    private val expectedResponderFrame = "01001999794b828d93665b46e8150228aa426b48b03a0c90a1aaf742"
 
     @Test
     fun prologueBindsTheHelloFrame() {

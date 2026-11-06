@@ -115,11 +115,14 @@ def main() -> None:
     msg1, msg2, c1, c2, h = handshake(psk, prologue, e1_priv, e2_priv)
 
     # One transport frame each way: ESPHome's inner header is 4 bytes big endian.
-    frame = b"\x00\x01" + (0x0005).to_bytes(2, "big") + b"hello"
+    # Message type 1 flows initiator to responder, type 2 the other way; both
+    # carry the same body so only the key direction differs.
+    frame_i2r = b"\x00\x01" + (0x0005).to_bytes(2, "big") + b"hello"
+    frame_r2i = b"\x00\x02" + (0x0005).to_bytes(2, "big") + b"hello"
     # Print the whole wire frame (indicator + big-endian length + ciphertext),
     # which is what the Kotlin encoder is compared against.
-    transport_i2r = with_header(c1.encrypt(frame, b""))
-    transport_r2i = with_header(c2.encrypt(frame, b""))
+    transport_i2r = with_header(c1.encrypt(frame_i2r, b""))
+    transport_r2i = with_header(c2.encrypt(frame_r2i, b""))
 
     print("psk            =", psk.hex())
     print("e1_priv        =", e1_priv.hex())

@@ -1,7 +1,6 @@
 package cn.alone.hamitv.web
 
 import android.content.Context
-import cn.alone.hamitv.HamitvApp
 import cn.alone.hamitv.config.ConfigStore
 import cn.alone.hamitv.esp.EspServer
 import cn.alone.hamitv.net.localIpv4
@@ -195,19 +194,6 @@ class ConfigServer(
                 call.respond(noiseState())
             }
 
-            get("/api/adb") {
-                if (!call.authorized()) return@get
-                call.respond(adbState())
-            }
-            put("/api/adb") {
-                if (!call.authorized()) return@put
-                if (!call.ensureCsrf()) return@put
-                store.keepAdb = call.receive<AdbPayload>().keep
-                // `context` here would be the call's coroutine context.
-                HamitvApp.applyKeepAdb(this@ConfigServer.context)
-                call.respond(adbState())
-            }
-
             post("/api/code/rotate") {
                 if (!call.authorized()) return@post
                 if (!call.ensureCsrf()) return@post
@@ -253,17 +239,6 @@ class ConfigServer(
         )
         call.respond(OkResponse())
     }
-
-    /**
-     * Whether boot should re-open network ADB. [granted] is what actually
-     * matters: without WRITE_SECURE_SETTINGS the write is a no-op, and only
-     * `adb shell pm grant` can hand that permission to a sideloaded app.
-     */
-    private fun adbState(): AdbState = AdbState(
-        keep = store.keepAdb,
-        granted = context.checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED,
-    )
 
     /** Binds to the Xiaomi camera service and reports what it offers. */
     private fun pipState(expectFloating: Boolean? = null): PipState = runCatching {
@@ -370,12 +345,6 @@ data class NoiseResponse(
 
 @Serializable
 data class NoisePayload(val enabled: Boolean = false, val psk: String? = null)
-
-@Serializable
-data class AdbPayload(val keep: Boolean = false)
-
-@Serializable
-data class AdbState(val keep: Boolean = false, val granted: Boolean = false)
 
 @Serializable
 data class CodeResponse(val code: String)

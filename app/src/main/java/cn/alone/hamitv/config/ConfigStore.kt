@@ -65,15 +65,6 @@ class ConfigStore(context: Context) {
         return null
     }
 
-    /**
-     * Re-open network ADB on every boot. Xiaomi's security centre closes it at
-     * boot, and this needs WRITE_SECURE_SETTINGS, which only `pm grant` can give
-     * an app that is not signed as a system app.
-     */
-    var keepAdb: Boolean
-        get() = prefs.getBoolean(KEY_KEEP_ADB, false)
-        set(value) = prefs.edit().putBoolean(KEY_KEEP_ADB, value).apply()
-
     /** Last camera list we could read, as JSON, so the select survives a slow boot. */
     var cachedCameras: String?
         get() = prefs.getString(KEY_CAMERA_CACHE, null)
@@ -172,7 +163,6 @@ class ConfigStore(context: Context) {
         private const val KEY_SESSION = "session"
         private const val KEY_SESSION_AT = "session_at"
         private const val KEY_NOISE_ENABLED = "noise_enabled"
-        private const val KEY_KEEP_ADB = "keep_adb"
         private const val KEY_CAMERA_CACHE = "camera_cache"
         private const val KEY_NOISE_PSK = "noise_psk"
         private const val PSK_BYTES = 32

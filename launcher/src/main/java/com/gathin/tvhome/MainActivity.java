@@ -21,6 +21,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
@@ -2129,6 +2130,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                         new int[]{0xA6FFFFFF, 0x47FFFFFF, 0x00FFFFFF},
                         new float[]{0f, 0.5f, 1f},
                         Shader.TileMode.CLAMP));
+            } else if (Config.GLOW_EDGE.equals(glowStyle)) {
+                // Vignette: colour only around the four edges, transparent in the middle, so a wallpaper
+                // keeps its subject instead of sitting under a full-screen wash. The shader is squashed
+                // to the screen's aspect so all four edges get the same weight; corners add up.
+                RadialGradient vignette = new RadialGradient(
+                        w * 0.5f, h * 0.5f, w * 0.70f,
+                        new int[]{0x00FFFFFF, 0x00FFFFFF, 0x30FFFFFF, 0x70FFFFFF},
+                        new float[]{0f, 0.45f, 0.70f, 1f},
+                        Shader.TileMode.CLAMP);
+                Matrix ellipse = new Matrix();
+                ellipse.setScale(1f, (float) h / w, w * 0.5f, h * 0.5f);
+                vignette.setLocalMatrix(ellipse);
+                paint.setShader(vignette);
             } else if (Config.GLOW_HORIZON.equals(glowStyle)) {
                 // The colour washes down from the top edge and fades out three quarters of the way down,
                 // with a brighter band along the top like light over a horizon.

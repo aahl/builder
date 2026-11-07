@@ -26,6 +26,11 @@ re-applying exactly these.
    stays reachable. That screen is the only place the pairing code is shown.
 3. `build.gradle.kts` in this directory — new file, `minSdk` raised from 26 to the
    host's 28, namespace and dependencies unchanged.
+4. `src/main/java/com/gathin/tvhome/Config.java`, `MainActivity.java` and
+   `src/main/res/values/config.xml` — a third `glow_style`, `edge`: a vignette that
+   tints only the four edges and keeps the middle clear, so a wallpaper is not
+   washed out by the full-screen glow. The built-in default moves from `radial`
+   to `edge`; themes can still ask for `radial` or `horizon`.
 
 ## Re-syncing
 
@@ -37,4 +42,4 @@ cp /tmp/cyt/launcher/app/src/main/AndroidManifest.xml launcher/src/main/
 cp /tmp/cyt/LICENSE third_party/cleanyourtv/LICENSE
 ```
 
-then re-apply patches 1 and 2, and rebuild.
+then re-apply patches 1, 2 and 4, and rebuild.

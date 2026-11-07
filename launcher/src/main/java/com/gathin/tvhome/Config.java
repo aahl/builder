@@ -248,12 +248,12 @@ final class Config {
     final int cinematicScrim;
     /** A rotating collection's groups by time of day, as file names (config.xml, wallpaper_moods); empty rotates through all of it. */
     final Map<String, Set<String>> wallpaperMoods;
-    /** Shape of the glow behind the focused app (config.xml, glow_style): {@link #GLOW_RADIAL} or {@link #GLOW_HORIZON}. */
+    /** Shape of the glow behind the focused app (config.xml, glow_style): {@link #GLOW_RADIAL}, {@link #GLOW_HORIZON} or {@link #GLOW_EDGE}. */
     final String glowStyle;
     /** The focus highlight's look (config.xml, glass_style): {@link #GLASS_DEFAULT}, {@link #GLASS_RIM} or {@link #GLASS_HALO}. */
     final String glassStyle;
 
-    static final String GLOW_RADIAL = "radial", GLOW_HORIZON = "horizon";
+    static final String GLOW_RADIAL = "radial", GLOW_HORIZON = "horizon", GLOW_EDGE = "edge";
     static final String GLASS_DEFAULT = "glass", GLASS_RIM = "rim", GLASS_HALO = "halo";
     /** Show each rotating wallpaper's name from wallpapers/captions.txt (config.xml / theme wallpaper_captions). */
     final boolean wallpaperCaptions;
@@ -414,9 +414,13 @@ final class Config {
         this.glassStyle = glassStyle(glassStyle);
     }
 
-    /** A known glow_style, or radial (the default) for anything else. */
+    /** A known glow_style, or radial (the fallback) for anything else. */
     static String glowStyle(String value) {
-        return value != null && GLOW_HORIZON.equalsIgnoreCase(value.trim()) ? GLOW_HORIZON : GLOW_RADIAL;
+        if (value == null) return GLOW_RADIAL;
+        String v = value.trim();
+        if (GLOW_HORIZON.equalsIgnoreCase(v)) return GLOW_HORIZON;
+        if (GLOW_EDGE.equalsIgnoreCase(v)) return GLOW_EDGE;
+        return GLOW_RADIAL;
     }
 
     /** A known glass_style, or glass (the default) for anything else. */

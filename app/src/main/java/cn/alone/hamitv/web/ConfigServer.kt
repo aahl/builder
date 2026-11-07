@@ -10,6 +10,9 @@ import kotlinx.coroutines.withContext
 import io.ktor.http.ContentType
 import io.ktor.http.Cookie
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.PartData
+import io.ktor.http.content.forEachPart
+import io.ktor.http.content.streamProvider
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.call
@@ -22,9 +25,12 @@ import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.origin
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.request.receive
+import io.ktor.server.request.receiveMultipart
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondFile
 import io.ktor.server.response.respondText
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
@@ -45,6 +51,7 @@ class ConfigServer(
     private var engine: ApplicationEngine? = null
     private val limiter = PairingLimiter()
     private val camera = CameraBinder(context.applicationContext)
+    private val wallpapers = WallpaperStore(context.applicationContext)
     private val startedAt = System.currentTimeMillis()
 
     @Synchronized
@@ -87,6 +94,9 @@ class ConfigServer(
         routing {
             get("/") {
                 call.respondText(asset("web/index.html"), ContentType.Text.Html)
+            }
+            get("/wallpapers") {
+                call.respondText(asset("web/wallpapers.html"), ContentType.Text.Html)
             }
             get("/health") {
                 call.respondText("ok")
@@ -134,6 +144,58 @@ class ConfigServer(
                     call.respond(OkResponse())
                 } else {
                     call.respond(HttpStatusCode.BadRequest, ErrorResponse(error))
+                }
+            }
+
+            get("/api/wallpapers") {
+                if (!call.authorized()) return@get
+                call.respond(withContext(Dispatchers.IO) { wallpapers.state() })
+            }
+            put("/api/wallpapers") {
+                if (!call.authorized()) return@put
+                if (!call.ensureCsrf()) return@put
+                val payload = call.receive<WallpaperSettings>()
+                val state = withContext(Dispatchers.IO) { wallpapers.saveSettings(payload) }
+                call.respond(state)
+            }
+            post("/api/wallpapers") {
+                if (!call.authorized()) return@post
+                if (!call.ensureCsrf()) return@post
+                val result = withContext(Dispatchers.IO) {
+                    val added = mutableListOf<String>()
+                    val errors = mutableListOf<String>()
+                    call.receiveMultipart().forEachPart { part ->
+                        if (part is PartData.FileItem) {
+                            when (val saved = wallpapers.save(part.originalFileName, part.streamProvider())) {
+                                is WallpaperStore.SaveResult.Saved -> added += saved.name
+                                is WallpaperStore.SaveResult.Rejected ->
+                                    errors += "${part.originalFileName ?: "文件"}: ${saved.reason}"
+                            }
+                        }
+                    }
+                    WallpaperUpload(added = added, errors = errors)
+                }
+                if (result.added.isNotEmpty()) wallpapers.reloadHome()
+                call.respond(result)
+            }
+            get("/api/wallpapers/{name}") {
+                if (!call.authorized()) return@get
+                val file = withContext(Dispatchers.IO) { wallpapers.file(call.parameters["name"]) }
+                if (file == null) {
+                    call.respond(HttpStatusCode.NotFound, ErrorResponse("没有这张壁纸"))
+                } else {
+                    call.respondFile(file)
+                }
+            }
+            delete("/api/wallpapers/{name}") {
+                if (!call.authorized()) return@delete
+                if (!call.ensureCsrf()) return@delete
+                val removed = withContext(Dispatchers.IO) { wallpapers.delete(call.parameters["name"]) }
+                if (!removed) {
+                    call.respond(HttpStatusCode.NotFound, ErrorResponse("没有这张壁纸"))
+                } else {
+                    wallpapers.reloadHome()
+                    call.respond(OkResponse())
                 }
             }
 
@@ -345,6 +407,36 @@ data class NoiseResponse(
 
 @Serializable
 data class NoisePayload(val enabled: Boolean = false, val psk: String? = null)
+
+@Serializable
+data class WallpaperFile(val name: String, val size: Long = 0, val usable: Boolean = true)
+
+@Serializable
+data class WallpaperState(
+    val enabled: Boolean = true,
+    val rotationMinutes: Int = 0,
+    val order: String = WallpaperStore.ORDER_SHUFFLE,
+    val dim: Int = 0,
+    val files: List<WallpaperFile> = emptyList(),
+    val maxFiles: Int = WallpaperStore.MAX_FILES,
+    val maxBytes: Long = WallpaperStore.MAX_BYTES,
+    /** A wallpaper picked on the TV ("none" included) overrides the collection. */
+    val onTvChoice: String? = null,
+)
+
+@Serializable
+data class WallpaperSettings(
+    val enabled: Boolean = true,
+    val rotationMinutes: Int = 60,
+    val order: String = WallpaperStore.ORDER_SHUFFLE,
+    val dim: Int = 0,
+)
+
+@Serializable
+data class WallpaperUpload(
+    val added: List<String> = emptyList(),
+    val errors: List<String> = emptyList(),
+)
 
 @Serializable
 data class CodeResponse(val code: String)

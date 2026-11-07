@@ -229,10 +229,16 @@ txt   mac=0282bc4f0f95  friendly_name=客厅电视  version=2025.12.0
 
 - 设备名称、配置台端口、ESPHome 端口
 - 命令表（JSON，保存前会校验）
+- 壁纸管理（`/wallpapers`）：上传、删除桌面壁纸，设置轮换间隔、顺序和暗化
 - 重置配对码（同时踢掉已配对会话）、重启服务
 
 鉴权说明：4 位码只有 1 万种组合，因此配对接口按 IP 限流，5 次失败锁 60 秒并
 指数退避。**不要把 8122 暴露到公网。**
+
+壁纸页面把图片写进 `Android/data/<包名>/files/wallpapers/`，即 CleanYourTV
+桌面读取的同一个目录，并修改 `config.json` 里的 `wallpaper`、
+`wallpaper_rotation_minutes`、`wallpaper_order`、`wallpaper_dim`。单张上限
+10MB、最多 100 张；保存后回到电视切一次应用再回桌面，Home 会重读配置。
 
 ## 构建
 

@@ -2136,7 +2136,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 // to the screen's aspect so all four edges get the same weight; corners add up.
                 RadialGradient vignette = new RadialGradient(
                         w * 0.5f, h * 0.5f, w * 0.70f,
-                        new int[]{0x00FFFFFF, 0x00FFFFFF, 0x30FFFFFF, 0x70FFFFFF},
+                        new int[]{0x00FFFFFF, 0x00FFFFFF, 0x22FFFFFF, 0x52FFFFFF},
                         new float[]{0f, 0.45f, 0.70f, 1f},
                         Shader.TileMode.CLAMP);
                 Matrix ellipse = new Matrix();

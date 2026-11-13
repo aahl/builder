@@ -151,6 +151,9 @@ settings put secure accessibility_enabled 1
 settings get secure enabled_accessibility_services'
 ```
 
+覆盖安装（`adb install -r`）后系统会清掉这条授权，需要再执行一次；面板和 HA
+在那之后会显示「无障碍未开启」，不是状态坏了。
+
 边界：强停、撤销无障碍、卸载都能打破管控，和任何非 root 方案一样；无障碍被厂商
 清掉后本应用写不回去（没有 `WRITE_SECURE_SETTINGS` 时），面板和 HA 会显示
 「未开启」而不是假装在管。

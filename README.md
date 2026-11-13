@@ -135,11 +135,15 @@ HDMI1/2/3 = 23/24/25，TV = 1，AV = 2，VGA = 0。
   约半秒后会被拉回题目；家长连按 5 次返回（长按重复不算）可以先退出。
 - **出题**：`StudyWatcherService` 只订阅窗口切换事件，用来取前台包名，也是唯一
   能从后台拉起答题页的上下文（无障碍服务不受后台启动 Activity 限制）。
-- **HA 实体**：`sensor.mitv_study_left`（剩余分钟）、`switch.mitv_study_pause`
-  （暂停管控）、`text_sensor.mitv_study_state`（未开启 / 已暂停 / 需要答题 /
-  剩余 N 分钟）。
+- **HA 实体**：`sensor.mitv_study_left`（剩余分钟）、`sensor.mitv_study_used_today`
+  （今日已用）、`sensor.mitv_study_earned_today`（今日已得）、
+  `sensor.mitv_study_daily_left`（当日额度还剩多少）、`switch.mitv_study_enabled`
+  （管控总开关，关掉会把正在显示的答题页也收掉）、`switch.mitv_study_pause`
+  （临时暂停）、`text_sensor.mitv_study_state`（未开启 / 无障碍未开启 / 已暂停 /
+  需要答题 / 剩余 N 分钟）、`text_sensor.mitv_study_last`（最近一组结果）。
 - **命令类型**：`study_lock`（立即出题，无 target 也可以）、`study_unlock`
-  （`extras.minutes`，默认取规则里的解锁分钟）。
+  （`extras.minutes`，默认取规则里的解锁分钟）。命令表版本 4 起会给老配置自动补上
+  这两个按钮，之后以文件为准。
 - **朗读**：可选，用 edge-tts（微软 Edge 的朗读接口，不需要 key）把题干和选项
   合成 MP3 再播放；面板里选音色和语速，有「在电视上试听」。遥控器 MENU 键重听。
   电视要能直连 `speech.platform.bing.com:443`；合成失败只影响出声，答题照常。

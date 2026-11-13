@@ -6,6 +6,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,6 +49,9 @@ class StudySpeaker private constructor(context: Context) {
         job = scope.launch {
             val bytes = try {
                 EdgeTts.synthesize(text, voice)
+            } catch (e: CancellationException) {
+                // A new question (or leaving the page) cancelled this one.
+                throw e
             } catch (e: Exception) {
                 lastError = e.message ?: e.javaClass.simpleName
                 Log.w(TAG, "cannot read the question", e)

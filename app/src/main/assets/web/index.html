@@ -260,6 +260,8 @@ $("adbKeep").onchange = async () => {
     });
     renderAdb(state);
     toast(state.keep ? (state.granted ? "已开启" : "已记录，但没有权限不会生效") : "已关闭");
+    // The keeper writes adb_enabled on its own thread; read the result again once it has run.
+    if (state.keep && !state.enabled) setTimeout(loadAdb, 1500);
   } catch (error) {
     toast(error.message, true);
   }

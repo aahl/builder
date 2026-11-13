@@ -149,7 +149,7 @@ object StudySpeech {
         val options = question.options.mapIndexed { i, option ->
             "${('A' + i)}，$option"
         }.joinToString("；")
-        return "${normalize(question.q).trimEnd('?', '？', ' ')}。选项：$options。"
+        return "${normalize(question.q)}。选项：$options。"
     }
 
     private fun normalize(prompt: String): String = prompt

@@ -102,7 +102,10 @@
       </div>
       <label for="exempt">额外豁免的应用包名（每行一个）</label>
       <textarea id="exempt" placeholder="com.example.player"></textarea>
-      <div class="row"><button id="saveRules">保存规则</button></div>
+      <div class="row">
+        <button id="saveRules">保存规则</button>
+        <span id="rulesDirtyHint" class="sub hidden" style="margin:0;align-self:center">有未保存的修改</span>
+      </div>
     </div>
 
     <div class="card">
@@ -233,6 +236,7 @@ function showApp() {
 
 let bank = [];
 let searching = "";
+let rulesDirty = false;
 let timer = null;
 
 function minutes(sec) {
@@ -258,12 +262,25 @@ function renderStatus(data) {
   $("pause").textContent = s.paused ? "恢复管控" : "暂停管控";
 }
 
-function renderRules(rules) {  $("enabled").checked = rules.enabled;
+function renderRules(rules, force) {
+  // The page polls every 5 s; an unsaved edit must not be overwritten by it.
+  if (rulesDirty && !force) return;
+  $("enabled").checked = rules.enabled;
   $("dailyCap").value = rules.dailyCapMin;
   $("unlock").value = rules.unlockMin;
   $("groupSize").value = rules.groupSize;
   $("passPercent").value = rules.passPercent;
   $("exempt").value = (rules.exempt || []).join("\n");
+}
+
+function markRulesDirty() {
+  rulesDirty = true;
+  $("rulesDirtyHint").classList.remove("hidden");
+}
+
+function clearRulesDirty() {
+  rulesDirty = false;
+  $("rulesDirtyHint").classList.add("hidden");
 }
 
 function renderVoice(data) {
@@ -404,13 +421,20 @@ $("saveRules").onclick = async () => {
   };
   try {
     const data = await api("/api/study/rules", { method: "PUT", body: JSON.stringify(payload) });
+    clearRulesDirty();
     renderStatus(data);
-    renderRules(data.rules);
+    renderRules(data.rules, true);
     toast("规则已保存");
   } catch (error) {
     toast(error.message, true);
   }
 };
+
+["enabled", "dailyCap", "unlock", "groupSize", "passPercent", "exempt"].forEach((id) => {
+  const field = $(id);
+  field.addEventListener("input", markRulesDirty);
+  field.addEventListener("change", markRulesDirty);
+});
 
 $("lock").onclick = async () => {
   try {

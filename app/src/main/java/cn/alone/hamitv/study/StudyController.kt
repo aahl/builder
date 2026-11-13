@@ -58,6 +58,19 @@ class StudyController(
         return state
     }
 
+    /**
+     * Close a finished group: award time when the ratio clears the bar, otherwise
+     * leave the account alone so the child can simply try another group.
+     */
+    @Synchronized
+    fun recordGroup(correct: Int, total: Int): Boolean {
+        if (total <= 0) return false
+        if (correct * 100 / total < rules.passPercent) return false
+        state = StudyLedger.grant(state, rules.unlockMin, rules, System.currentTimeMillis())
+        store.saveState(state)
+        return true
+    }
+
     @Synchronized
     fun replaceBank(items: List<Question>): Int {
         data = data.copy(bank = items.filter { it.isValid() }.distinctBy { it.id })

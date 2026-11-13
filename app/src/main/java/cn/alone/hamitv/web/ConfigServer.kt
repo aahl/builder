@@ -10,6 +10,7 @@ import cn.alone.hamitv.net.localIpv4
 import cn.alone.hamitv.study.StudyController
 import cn.alone.hamitv.study.StudyRules
 import cn.alone.hamitv.study.StudyState
+import cn.alone.hamitv.study.StudyWatcherService
 import cn.alone.hamitv.system.AdbKeeper
 import cn.alone.hamitv.tv.CameraBinder
 import kotlinx.coroutines.Dispatchers
@@ -175,6 +176,15 @@ class ConfigServer(
                 }
                 controller.setPaused(call.receive<StudyPause>().paused)
                 call.respond(studyPayload())
+            }
+            post("/api/study/lock") {
+                if (!call.authorized()) return@post
+                if (!call.ensureCsrf()) return@post
+                if (!StudyWatcherService.launch(context, "manual")) {
+                    call.respond(HttpStatusCode.Conflict, ErrorResponse("学习管控的无障碍服务未开启"))
+                    return@post
+                }
+                call.respond(OkResponse())
             }
 
             get("/api/commands") {
@@ -422,7 +432,10 @@ class ConfigServer(
             balanceMinutes = controller.balanceMinutes(now),
             locked = controller.isLocked(now),
             bankSize = controller.bankSize,
-            diagnostics = controller.diagnostics(now),
+            diagnostics = controller.diagnostics(now) + mapOf(
+                "watcherConnected" to StudyWatcherService.connected.toString(),
+                "watcherEnabled" to StudyWatcherService.enabled(context).toString(),
+            ),
         )
     }
 

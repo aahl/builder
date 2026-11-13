@@ -3,4 +3,18 @@
     <string name="app_name">HA MiTV</string>
     <string name="pair_hint">浏览器打开上面的地址，输入 4 位配对码 · 按 OK 键重新生成</string>
     <string name="autostart_hint">本应用就是电视桌面，开机自动运行 · 长按 OK 打开应用详情</string>
+
+    <string name="study_watcher_name">学习管控</string>
+    <string name="study_watcher_description">识别当前正在使用的应用，时间用完时显示答题页。不读取屏幕内容。</string>
+    <string name="study_progress">第 %1$d / %2$d 题</string>
+    <string name="study_meta">剩余 %1$d 分钟</string>
+    <string name="study_correct">答对了</string>
+    <string name="study_wrong">答错了，正确答案：%1$s</string>
+    <string name="study_passed_title">这一组通过</string>
+    <string name="study_passed">已加 %1$d 分钟</string>
+    <string name="study_failed_title">还差一点</string>
+    <string name="study_failed">答对 %1$d / %2$d 题</string>
+    <string name="study_retry">再来一组</string>
+    <string name="study_empty_bank">题库是空的</string>
+    <string name="study_empty_bank_hint">请让家长在配置台的「学习管控」里添加题目。</string>
 </resources>

@@ -19,6 +19,7 @@ import cn.alone.hamitv.config.ConfigStore
 import cn.alone.hamitv.esp.EspServer
 import cn.alone.hamitv.net.localIpv4
 import cn.alone.hamitv.study.StudyController
+import cn.alone.hamitv.study.StudyRuntime
 import cn.alone.hamitv.tv.CommandExecutor
 import cn.alone.hamitv.web.ConfigServer
 
@@ -63,7 +64,7 @@ class AgentService : Service() {
         super.onCreate()
         isRunning = true
         store = ConfigStore(this)
-        study = StudyController(this)
+        study = StudyRuntime.get(this)
         esp = EspServer(this, store, CommandExecutor(this)) { Log.d(TAG, it) }
         server = ConfigServer(this, store, esp, study)
         createChannel()

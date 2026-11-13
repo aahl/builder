@@ -268,7 +268,7 @@ class ConfigServer(
                 if (!call.authorized()) return@put
                 if (!call.ensureCsrf()) return@put
                 store.keepAdb = call.receive<AdbPayload>().keep
-                if (store.keepAdb) AdbKeeper.ensure(context)
+                if (store.keepAdb) AdbKeeper.ensure(this@ConfigServer.context)
                 call.respond(adbState())
             }
 

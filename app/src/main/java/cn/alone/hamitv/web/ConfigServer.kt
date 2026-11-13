@@ -7,6 +7,9 @@ import android.provider.Settings
 import cn.alone.hamitv.config.ConfigStore
 import cn.alone.hamitv.esp.EspServer
 import cn.alone.hamitv.net.localIpv4
+import cn.alone.hamitv.study.StudyController
+import cn.alone.hamitv.study.StudyRules
+import cn.alone.hamitv.study.StudyState
 import cn.alone.hamitv.system.AdbKeeper
 import cn.alone.hamitv.tv.CameraBinder
 import kotlinx.coroutines.Dispatchers
@@ -50,6 +53,7 @@ class ConfigServer(
     private val context: Context,
     private val store: ConfigStore,
     private val esp: EspServer? = null,
+    private val study: StudyController? = null,
 ) {
 
     private var engine: ApplicationEngine? = null
@@ -133,6 +137,44 @@ class ConfigServer(
                 // A rename changes the mDNS record and the advertised node name.
                 if (store.deviceName != previousName) esp?.reload()
                 call.respond(ConfigResult(restartRequired = portChanged))
+            }
+
+            get("/api/study") {
+                if (!call.authorized()) return@get
+                call.respond(studyPayload())
+            }
+            put("/api/study/rules") {
+                if (!call.authorized()) return@put
+                if (!call.ensureCsrf()) return@put
+                val controller = study
+                if (controller == null) {
+                    call.respond(HttpStatusCode.ServiceUnavailable, ErrorResponse("学习管控未启动"))
+                    return@put
+                }
+                controller.setRules(call.receive<StudyRules>())
+                call.respond(studyPayload())
+            }
+            post("/api/study/unlock") {
+                if (!call.authorized()) return@post
+                if (!call.ensureCsrf()) return@post
+                val controller = study
+                if (controller == null) {
+                    call.respond(HttpStatusCode.ServiceUnavailable, ErrorResponse("学习管控未启动"))
+                    return@post
+                }
+                controller.unlock(call.receive<StudyMinutes>().minutes)
+                call.respond(studyPayload())
+            }
+            post("/api/study/pause") {
+                if (!call.authorized()) return@post
+                if (!call.ensureCsrf()) return@post
+                val controller = study
+                if (controller == null) {
+                    call.respond(HttpStatusCode.ServiceUnavailable, ErrorResponse("学习管控未启动"))
+                    return@post
+                }
+                controller.setPaused(call.receive<StudyPause>().paused)
+                call.respond(studyPayload())
             }
 
             get("/api/commands") {
@@ -371,6 +413,19 @@ class ConfigServer(
         encryption = store.noiseEnabled,
     )
 
+    private fun studyPayload(): StudyPayload {
+        val controller = study ?: return StudyPayload()
+        val now = System.currentTimeMillis()
+        return StudyPayload(
+            rules = controller.rules,
+            state = controller.snapshot(now),
+            balanceMinutes = controller.balanceMinutes(now),
+            locked = controller.isLocked(now),
+            bankSize = controller.bankSize,
+            diagnostics = controller.diagnostics(now),
+        )
+    }
+
     private suspend fun ApplicationCall.authorized(): Boolean {
         if (store.isValidSession(request.cookies[SESSION_COOKIE])) return true
         respond(HttpStatusCode.Unauthorized, ErrorResponse("unauthorized"))
@@ -494,6 +549,23 @@ data class PipState(
 
 @Serializable
 data class OkResponse(val ok: Boolean = true)
+
+@Serializable
+data class StudyPayload(
+    val rules: StudyRules = StudyRules(),
+    val state: StudyState = StudyState(),
+    val balanceMinutes: Int = 0,
+    val locked: Boolean = false,
+    val bankSize: Int = 0,
+    val diagnostics: Map<String, String> = emptyMap(),
+)
+
+@Serializable
+data class StudyMinutes(val minutes: Int = 0)
+
+@Serializable
+data class StudyPause(val paused: Boolean = false)
+
 
 @Serializable
 data class ErrorResponse(val error: String)

@@ -18,6 +18,7 @@ import androidx.core.app.NotificationCompat
 import cn.alone.hamitv.config.ConfigStore
 import cn.alone.hamitv.esp.EspServer
 import cn.alone.hamitv.net.localIpv4
+import cn.alone.hamitv.study.StudyController
 import cn.alone.hamitv.tv.CommandExecutor
 import cn.alone.hamitv.web.ConfigServer
 
@@ -36,6 +37,7 @@ class AgentService : Service() {
     private lateinit var store: ConfigStore
     private lateinit var server: ConfigServer
     private lateinit var esp: EspServer
+    private lateinit var study: StudyController
 
     private var lastIp: String = ""
 
@@ -61,8 +63,9 @@ class AgentService : Service() {
         super.onCreate()
         isRunning = true
         store = ConfigStore(this)
+        study = StudyController(this)
         esp = EspServer(this, store, CommandExecutor(this)) { Log.d(TAG, it) }
-        server = ConfigServer(this, store, esp)
+        server = ConfigServer(this, store, esp, study)
         createChannel()
         startForeground(NOTIFICATION_ID, buildNotification(localIpv4()))
         server.start()

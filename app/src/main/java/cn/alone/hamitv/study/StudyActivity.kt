@@ -53,8 +53,11 @@ class StudyActivity : Activity() {
         val question = group[index]
         findViewById<TextView>(R.id.studyProgress).text =
             getString(R.string.study_progress, index + 1, group.size)
-        findViewById<TextView>(R.id.studyMeta).text =
+        findViewById<TextView>(R.id.studyMeta).text = if (study.isLocked()) {
+            getString(R.string.study_meta_locked, study.rules.unlockMin)
+        } else {
             getString(R.string.study_meta, study.balanceMinutes())
+        }
         findViewById<TextView>(R.id.studyQuestion).text = question.q
         findViewById<TextView>(R.id.studyFeedback).text = ""
 

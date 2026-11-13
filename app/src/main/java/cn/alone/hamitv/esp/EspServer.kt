@@ -29,6 +29,7 @@ import cn.alone.hamitv.esp.noise.CipherState
 import cn.alone.hamitv.esp.noise.NoiseHandshake
 import cn.alone.hamitv.study.StudyController
 import cn.alone.hamitv.study.StudyLedger
+import cn.alone.hamitv.study.StudyWatcherService
 import cn.alone.hamitv.tv.CommandExecutor
 import cn.alone.hamitv.tv.CommandSpec
 import cn.alone.hamitv.tv.CommandTable
@@ -232,6 +233,9 @@ class EspServer(
         val state = controller.snapshot()
         val text = when {
             !controller.rules.enabled -> "未开启"
+            // Say so instead of looking like a well-behaved child: without the
+            // watcher there is no foreground package and nothing is charged.
+            !StudyWatcherService.enabled(context) -> "无障碍未开启"
             state.paused -> "已暂停"
             StudyLedger.isLocked(state, controller.rules) -> "需要答题"
             else -> "剩余 ${state.balanceSec / 60} 分钟"

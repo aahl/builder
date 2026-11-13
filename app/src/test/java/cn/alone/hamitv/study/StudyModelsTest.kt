@@ -60,4 +60,19 @@ class StudyModelsTest {
         val text = json.encodeToString(StudyState.serializer(), state)
         assertEquals(state, json.decodeFromString(StudyState.serializer(), text))
     }
+
+    @Test
+    fun voiceFallsBackWhenTheNameOrTheRateIsWrong() {
+        val voice = StudyVoice(voice = "xx-XX-NobodyNeural", rate = "+5000%", pitch = "loud").sanitized()
+        assertEquals(StudyVoices.DEFAULT, voice.voice)
+        assertEquals("+0%", voice.rate)
+        assertEquals("+0Hz", voice.pitch)
+    }
+
+    @Test
+    fun voiceKeepsAKnownNameAndRate() {
+        val voice = StudyVoice(enabled = true, voice = "zh-CN-YunxiNeural", rate = "-15%").sanitized()
+        assertEquals("zh-CN-YunxiNeural", voice.voice)
+        assertEquals("-15%", voice.rate)
+    }
 }

@@ -43,6 +43,8 @@ class StudyController(
 
     val rules: StudyRules get() = data.rules
 
+    val voice: StudyVoice get() = data.voice
+
     val bank: List<Question> get() = data.bank
 
     val bankSize: Int get() = data.bank.size
@@ -144,6 +146,13 @@ class StudyController(
         store.save(data)
         publishIfChanged()
         return data.rules
+    }
+
+    @Synchronized
+    fun setVoice(updated: StudyVoice): StudyVoice {
+        data = data.copy(voice = updated.sanitized())
+        store.save(data)
+        return data.voice
     }
 
     @Synchronized

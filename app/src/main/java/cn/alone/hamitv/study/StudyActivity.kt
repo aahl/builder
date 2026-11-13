@@ -21,6 +21,7 @@ import cn.alone.hamitv.R
 class StudyActivity : Activity() {
 
     private lateinit var study: StudyController
+    private val speaker by lazy { StudySpeaker.get(this) }
     private var group: List<Question> = emptyList()
     private var index = 0
     private var correct = 0
@@ -70,11 +71,13 @@ class StudyActivity : Activity() {
             rows.addView(row)
         }
         rows.getChildAt(0)?.requestFocus()
+        speaker.speak(StudySpeech.text(question, index, group.size), study.voice)
     }
 
     private fun answer(choice: Int) {
         if (answered) return
         answered = true
+        speaker.stop()
         val question = group[index]
         val right = choice == question.answer
         if (right) correct++
@@ -95,6 +98,7 @@ class StudyActivity : Activity() {
     }
 
     private fun finishGroup() {
+        speaker.stop()
         val passed = study.recordGroup(correct, group.size)
         findViewById<TextView>(R.id.studyQuestion).text =
             getString(if (passed) R.string.study_passed_title else R.string.study_failed_title)
@@ -118,6 +122,13 @@ class StudyActivity : Activity() {
 
     /** Swallow BACK so the page cannot be dismissed with one press. */
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        // The remote's MENU key repeats the question, for a child who missed it.
+        if (keyCode == KeyEvent.KEYCODE_MENU) {
+            if (group.isNotEmpty()) {
+                speaker.speak(StudySpeech.text(group[index], index, group.size), study.voice)
+            }
+            return true
+        }
         if (keyCode != KeyEvent.KEYCODE_BACK) return super.onKeyDown(keyCode, event)
         val now = SystemClock.elapsedRealtime()
         backPresses = if (now - lastBackAt < 1_500) backPresses + 1 else 1
@@ -133,6 +144,7 @@ class StudyActivity : Activity() {
 
     override fun onPause() {
         visible = false
+        speaker.stop()
         super.onPause()
     }
 

@@ -106,6 +106,31 @@
     </div>
 
     <div class="card">
+      <h2>朗读（edge-tts）</h2>
+      <label style="display:flex;align-items:center;gap:10px;color:var(--text)">
+        <input type="checkbox" id="voiceEnabled" style="width:auto">
+        <span>出题时把题目读出来</span>
+      </label>
+      <div class="grid">
+        <div><label for="voiceName">音色</label><select id="voiceName"></select></div>
+        <div><label for="voiceRate">语速</label>
+          <select id="voiceRate">
+            <option value="-30%">慢很多（-30%）</option>
+            <option value="-15%">稍慢（-15%）</option>
+            <option value="+0%">正常</option>
+            <option value="+15%">稍快（+15%）</option>
+            <option value="+30%">快很多（+30%）</option>
+          </select>
+        </div>
+      </div>
+      <div class="sub" id="voiceHint" style="margin:8px 0 0">电视需要能访问 speech.platform.bing.com；试听要等 1–3 秒。</div>
+      <div class="row">
+        <button id="saveVoice">保存朗读设置</button>
+        <button id="testVoice" class="ghost">在电视上试听</button>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>操作</h2>
       <div class="row">
         <button id="lock" class="ghost">立即出题</button>
@@ -233,13 +258,30 @@ function renderStatus(data) {
   $("pause").textContent = s.paused ? "恢复管控" : "暂停管控";
 }
 
-function renderRules(rules) {
-  $("enabled").checked = rules.enabled;
+function renderRules(rules) {  $("enabled").checked = rules.enabled;
   $("dailyCap").value = rules.dailyCapMin;
   $("unlock").value = rules.unlockMin;
   $("groupSize").value = rules.groupSize;
   $("passPercent").value = rules.passPercent;
   $("exempt").value = (rules.exempt || []).join("\n");
+}
+
+function renderVoice(data) {
+  const voice = data.voice || {};
+  $("voiceEnabled").checked = !!voice.enabled;
+  const select = $("voiceName");
+  if (select.options.length === 0) {
+    (data.voices || []).forEach((item) => {
+      const option = document.createElement("option");
+      option.value = item.id;
+      option.textContent = item.label;
+      select.appendChild(option);
+    });
+  }
+  if (voice.voice) select.value = voice.voice;
+  if (voice.rate) $("voiceRate").value = voice.rate;
+  const error = data.diagnostics && data.diagnostics.speakError;
+  if (error) $("voiceHint").textContent = "上次朗读失败：" + error;
 }
 
 function renderBank() {
@@ -318,7 +360,8 @@ async function loadBank() {
 
 async function boot() {
   try {
-    await loadStatus();
+    const data = await loadStatus();
+    renderVoice(data);
     await loadBank();
     showApp();
     if (timer) clearInterval(timer);
@@ -407,8 +450,7 @@ $("search").oninput = (event) => {
   renderBank();
 };
 
-$("saveQuestion").onclick = async () => {
-  const options = [0, 1, 2, 3].map((i) => $("o" + i).value.trim()).filter(Boolean);
+$("saveQuestion").onclick = async () => {  const options = [0, 1, 2, 3].map((i) => $("o" + i).value.trim()).filter(Boolean);
   const item = {
     id: $("qid").value.trim() || "q" + Date.now().toString(36),
     q: $("qtext").value.trim(),
@@ -424,6 +466,40 @@ $("saveQuestion").onclick = async () => {
     toast("已保存");
   } catch (error) {
     toast(error.message, true);
+  }
+};
+
+$("saveVoice").onclick = async () => {
+  try {
+    const data = await api("/api/study/voice", {
+      method: "PUT",
+      body: JSON.stringify({
+        enabled: $("voiceEnabled").checked,
+        voice: $("voiceName").value,
+        rate: $("voiceRate").value,
+        pitch: "+0Hz",
+      }),
+    });
+    renderVoice(data);
+    toast("朗读设置已保存");
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
+$("testVoice").onclick = async () => {
+  const button = $("testVoice");
+  button.disabled = true;
+  button.textContent = "合成中…";
+  try {
+    const result = await api("/api/study/voice/test", { method: "POST", body: "{}" });
+    if (result.ok) toast("已发送到电视（" + Math.round(result.bytes / 1024) + " KB）");
+    else toast(result.error || "试听失败", true);
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "在电视上试听";
   }
 };
 

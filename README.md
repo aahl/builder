@@ -139,6 +139,10 @@ HDMI1/2/3 = 23/24/25，TV = 1，AV = 2，VGA = 0。
   剩余 N 分钟）。
 - **命令类型**：`study_lock`（立即出题，无 target 也可以）、`study_unlock`
   （`extras.minutes`，默认取规则里的解锁分钟）。
+- **朗读**：可选，用 edge-tts（微软 Edge 的朗读接口，不需要 key）把题干和选项
+  合成 MP3 再播放；面板里选音色和语速，有「在电视上试听」。遥控器 MENU 键重听。
+  电视要能直连 `speech.platform.bing.com:443`；合成失败只影响出声，答题照常。
+  `GET /api/study/voice/sample?text=...` 能直接取回 MP3，方便不站在电视前排查。
 
 一次性开启（**追加**，别覆盖已有的无障碍服务，否则遥控器的 Home 键会失灵）：
 

@@ -92,6 +92,12 @@ dependencies {
     implementation("io.ktor:ktor-server-status-pages:2.3.12")
     implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.12")
 
+    // edge-tts is a websocket; the CIO client shares the ktor version the
+    // server already uses, so this is one engine rather than a second stack.
+    implementation("io.ktor:ktor-client-core:2.3.12")
+    implementation("io.ktor:ktor-client-cio:2.3.12")
+    implementation("io.ktor:ktor-client-websockets:2.3.12")
+
     implementation("com.google.zxing:core:3.5.3")
 
     testImplementation("junit:junit:4.13.2")

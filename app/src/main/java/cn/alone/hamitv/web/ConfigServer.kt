@@ -7,8 +7,12 @@ import android.provider.Settings
 import cn.alone.hamitv.config.ConfigStore
 import cn.alone.hamitv.esp.EspServer
 import cn.alone.hamitv.net.localIpv4
+import cn.alone.hamitv.study.EdgeTts
 import cn.alone.hamitv.study.Question
 import cn.alone.hamitv.study.StudyController
+import cn.alone.hamitv.study.StudySpeaker
+import cn.alone.hamitv.study.StudyVoice
+import cn.alone.hamitv.study.StudyVoices
 import cn.alone.hamitv.study.StudyRules
 import cn.alone.hamitv.study.StudyState
 import cn.alone.hamitv.study.StudyWatcherService
@@ -37,6 +41,7 @@ import io.ktor.server.request.receive
 import io.ktor.server.request.receiveMultipart
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondFile
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.delete
@@ -180,6 +185,49 @@ class ConfigServer(
                 }
                 controller.setPaused(call.receive<StudyPause>().paused)
                 call.respond(studyPayload())
+            }
+            put("/api/study/voice") {
+                if (!call.authorized()) return@put
+                if (!call.ensureCsrf()) return@put
+                val controller = study
+                if (controller == null) {
+                    call.respond(HttpStatusCode.ServiceUnavailable, ErrorResponse("学习管控未启动"))
+                    return@put
+                }
+                controller.setVoice(call.receive<StudyVoice>())
+                call.respond(studyPayload())
+            }
+            post("/api/study/voice/test") {
+                if (!call.authorized()) return@post
+                if (!call.ensureCsrf()) return@post
+                val controller = study
+                if (controller == null) {
+                    call.respond(HttpStatusCode.ServiceUnavailable, ErrorResponse("学习管控未启动"))
+                    return@post
+                }
+                try {
+                    val bytes = EdgeTts.synthesize(SAMPLE_TEXT, controller.voice.copy(enabled = true))
+                    StudySpeaker.get(this@ConfigServer.context).playEncoded(bytes)
+                    call.respond(StudyVoiceTest(ok = true, bytes = bytes.size))
+                } catch (e: Exception) {
+                    call.respond(StudyVoiceTest(ok = false, error = e.message ?: e.javaClass.simpleName))
+                }
+            }
+            // Raw MP3 for diagnosing the voice path without standing next to the TV.
+            get("/api/study/voice/sample") {
+                if (!call.authorized()) return@get
+                val controller = study
+                if (controller == null) {
+                    call.respond(HttpStatusCode.ServiceUnavailable, ErrorResponse("学习管控未启动"))
+                    return@get
+                }
+                val text = call.request.queryParameters["text"] ?: SAMPLE_TEXT
+                try {
+                    val bytes = EdgeTts.synthesize(text, controller.voice.copy(enabled = true))
+                    call.respondBytes(bytes, ContentType("audio", "mpeg"))
+                } catch (e: Exception) {
+                    call.respond(HttpStatusCode.BadGateway, ErrorResponse(e.message ?: "edge-tts 失败"))
+                }
             }
             post("/api/study/lock") {
                 if (!call.authorized()) return@post
@@ -480,9 +528,12 @@ class ConfigServer(
             balanceMinutes = controller.balanceMinutes(now),
             locked = controller.isLocked(now),
             bankSize = controller.bankSize,
+            voice = controller.voice,
+            voices = StudyVoices.all.map { StudyVoiceOption(it.id, it.label) },
             diagnostics = controller.diagnostics(now) + mapOf(
                 "watcherConnected" to StudyWatcherService.connected.toString(),
                 "watcherEnabled" to StudyWatcherService.enabled(context).toString(),
+                "speakError" to (StudySpeaker.get(context).lastError ?: ""),
             ),
         )
     }
@@ -507,6 +558,7 @@ class ConfigServer(
         const val SESSION_COOKIE = "hamitv_session"
         const val CSRF_HEADER = "X-Requested-With"
         private const val SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
+        private const val SAMPLE_TEXT = "现在是晚上八点，请回答下面的问题。"
     }
 }
 
@@ -618,8 +670,16 @@ data class StudyPayload(
     val balanceMinutes: Int = 0,
     val locked: Boolean = false,
     val bankSize: Int = 0,
+    val voice: StudyVoice = StudyVoice(),
+    val voices: List<StudyVoiceOption> = emptyList(),
     val diagnostics: Map<String, String> = emptyMap(),
 )
+
+@Serializable
+data class StudyVoiceOption(val id: String = "", val label: String = "")
+
+@Serializable
+data class StudyVoiceTest(val ok: Boolean = false, val error: String? = null, val bytes: Int = 0)
 
 @Serializable
 data class StudyMinutes(val minutes: Int = 0)

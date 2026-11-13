@@ -41,7 +41,11 @@ class StudyStore(private val context: Context) {
 
     @Synchronized
     fun save(data: StudyFile) {
-        val clean = data.copy(rules = data.rules.sanitized(), bank = data.bank.filter { it.isValid() })
+        val clean = data.copy(
+            rules = data.rules.sanitized(),
+            voice = data.voice.sanitized(),
+            bank = data.bank.filter { it.isValid() },
+        )
         val temp = File(file.parentFile, "${file.name}.tmp")
         runCatching {
             temp.writeText(json.encodeToString(StudyFile.serializer(), clean))

@@ -57,9 +57,56 @@ data class StudyState(
     val lastTickMs: Long = 0,
 )
 
+/**
+ * Reading the question out loud. [voice], [rate] and [pitch] use the same
+ * strings edge-tts puts into the SSML, so the console can show exactly what is
+ * sent: "+0%", "-15%", "+0Hz".
+ */
+@Serializable
+data class StudyVoice(
+    val enabled: Boolean = false,
+    val voice: String = StudyVoices.DEFAULT,
+    val rate: String = "+0%",
+    val pitch: String = "+0Hz",
+) {
+    fun sanitized(): StudyVoice = copy(
+        voice = if (StudyVoices.isKnown(voice)) voice else StudyVoices.DEFAULT,
+        rate = rate.takeIf { RATE.matches(it) } ?: "+0%",
+        pitch = pitch.takeIf { PITCH.matches(it) } ?: "+0Hz",
+    )
+
+    private companion object {
+        val RATE = Regex("""^[+-]\d{1,3}%$""")
+        val PITCH = Regex("""^[+-]\d{1,3}Hz$""")
+    }
+}
+
+/** The voices the console offers. Unknown names fall back to [DEFAULT]. */
+object StudyVoices {
+
+    data class Option(val id: String, val label: String)
+
+    const val DEFAULT = "zh-CN-XiaoxiaoNeural"
+
+    val all: List<Option> = listOf(
+        Option("zh-CN-XiaoxiaoNeural", "晓晓 · 普通话女声"),
+        Option("zh-CN-XiaoyiNeural", "晓伊 · 普通话女声"),
+        Option("zh-CN-YunxiNeural", "云希 · 普通话男声"),
+        Option("zh-CN-YunjianNeural", "云健 · 普通话男声"),
+        Option("zh-CN-liaoning-XiaobeiNeural", "晓北 · 东北话"),
+        Option("zh-TW-HsiaoChenNeural", "曉臻 · 台湾国语"),
+        Option("en-US-AriaNeural", "Aria · English"),
+    )
+
+    fun isKnown(id: String): Boolean = all.any { it.id == id }
+
+    fun langOf(id: String): String = id.split("-").take(2).joinToString("-").ifEmpty { "zh-CN" }
+}
+
 /** Everything that lives in `filesDir/study.json`. */
 @Serializable
 data class StudyFile(
     val rules: StudyRules = StudyRules(),
+    val voice: StudyVoice = StudyVoice(),
     val bank: List<Question> = emptyList(),
 )

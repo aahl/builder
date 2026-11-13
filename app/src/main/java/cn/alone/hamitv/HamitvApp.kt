@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Application
 import android.os.Bundle
 import android.util.Log
+import cn.alone.hamitv.system.AdbKeeper
 
 /**
  * Starts the agent as soon as one of our screens is visible.
@@ -22,6 +23,7 @@ class HamitvApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        AdbKeeper.start(this)
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: Activity) {
                 ensureAgent()
@@ -38,6 +40,8 @@ class HamitvApp : Application() {
 
     /** Idempotent: the service ignores a second start while it is already up. */
     private fun ensureAgent() {
+        // The security centre may clear adb_enabled later than our first screen.
+        AdbKeeper.ensure(this)
         if (AgentService.isRunning) return
         runCatching { AgentService.start(this) }
             .onFailure { Log.e(TAG, "cannot start the agent", it) }

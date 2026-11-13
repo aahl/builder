@@ -1,9 +1,13 @@
 package cn.alone.hamitv.web
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.provider.Settings
 import cn.alone.hamitv.config.ConfigStore
 import cn.alone.hamitv.esp.EspServer
 import cn.alone.hamitv.net.localIpv4
+import cn.alone.hamitv.system.AdbKeeper
 import cn.alone.hamitv.tv.CameraBinder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -256,6 +260,18 @@ class ConfigServer(
                 call.respond(noiseState())
             }
 
+            get("/api/adb") {
+                if (!call.authorized()) return@get
+                call.respond(adbState())
+            }
+            put("/api/adb") {
+                if (!call.authorized()) return@put
+                if (!call.ensureCsrf()) return@put
+                store.keepAdb = call.receive<AdbPayload>().keep
+                if (store.keepAdb) AdbKeeper.ensure(context)
+                call.respond(adbState())
+            }
+
             post("/api/code/rotate") {
                 if (!call.authorized()) return@post
                 if (!call.ensureCsrf()) return@post
@@ -322,6 +338,16 @@ class ConfigServer(
         camera.unbind()
         PipState(available = false, error = error.message ?: error.javaClass.simpleName)
     }
+
+    /** Whether the console switch is on, whether the grant exists, and what the TV says now. */
+    private fun adbState() = AdbState(
+        keep = store.keepAdb,
+        granted = context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) ==
+            PackageManager.PERMISSION_GRANTED,
+        enabled = runCatching {
+            Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1
+        }.getOrDefault(false),
+    )
 
     private fun noiseState() = NoiseResponse(
         enabled = store.noiseEnabled,
@@ -407,6 +433,16 @@ data class NoiseResponse(
 
 @Serializable
 data class NoisePayload(val enabled: Boolean = false, val psk: String? = null)
+
+@Serializable
+data class AdbPayload(val keep: Boolean = false)
+
+@Serializable
+data class AdbState(
+    val keep: Boolean = false,
+    val granted: Boolean = false,
+    val enabled: Boolean = false,
+)
 
 @Serializable
 data class WallpaperFile(val name: String, val size: Long = 0, val usable: Boolean = true)

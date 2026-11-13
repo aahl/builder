@@ -176,8 +176,15 @@ stopped 的包收不到任何广播，alarm / job 也一并失效。占住 Home 
 （不校验签名），日志里是 `[White] com.ts.launcher=511`，这个包不会被 stop。
 换机型/换固件如果失效，用 `-PappId=<白名单里的包名>` 重新打包即可。
 
-小米安全中心会在开机扫包时关掉网络 ADB，写 `adb_enabled` 并不会真正恢复，所以不再提供
-自动重开；需要时在系统设置里手动打开。
+小米安全中心会在开机扫包时关掉网络 ADB。配置台的「维护 → 开机后自动保持 ADB 调试」
+会在 `adb_enabled` 被清掉时写回 1；如果开关已经是 1 但 adbd 没在监听，会在开机前三分钟
+探测 `127.0.0.1:5555`，做一次 0→1 让 adbd 重新起来。需要一次性授权：
+
+```bash
+adb shell pm grant com.ts.launcher android.permission.WRITE_SECURE_SETTINGS
+```
+
+没授权时开关只是记录状态。电视使用中手动关掉 ADB 会被当成你的本意，开关自动关闭。
 
 如果电视上还留着 Projectivy 这类第三方桌面，并且开着它的无障碍服务，HOME 键会被
 它抢走：系统先把我们拉起来，它的进程紧接着又把自己的桌面顶上来。在

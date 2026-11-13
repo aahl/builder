@@ -65,6 +65,15 @@ class ConfigStore(context: Context) {
         return null
     }
 
+    /**
+     * Keep network ADB on after boot. Xiaomi's security centre switches it off while
+     * scanning packages; AdbKeeper puts it back, and restarts adbd with a 0 -> 1 walk
+     * when the flag says on but the daemon is gone. Needs WRITE_SECURE_SETTINGS.
+     */
+    var keepAdb: Boolean
+        get() = prefs.getBoolean(KEY_KEEP_ADB, false)
+        set(value) = prefs.edit().putBoolean(KEY_KEEP_ADB, value).apply()
+
     /** Last camera list we could read, as JSON, so the select survives a slow boot. */
     var cachedCameras: String?
         get() = prefs.getString(KEY_CAMERA_CACHE, null)
@@ -163,6 +172,7 @@ class ConfigStore(context: Context) {
         private const val KEY_SESSION = "session"
         private const val KEY_SESSION_AT = "session_at"
         private const val KEY_NOISE_ENABLED = "noise_enabled"
+        private const val KEY_KEEP_ADB = "keep_adb"
         private const val KEY_CAMERA_CACHE = "camera_cache"
         private const val KEY_NOISE_PSK = "noise_psk"
         private const val PSK_BYTES = 32

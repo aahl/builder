@@ -144,6 +144,11 @@
 
     <div class="card">
       <h2>维护</h2>
+      <label style="display:flex;align-items:center;gap:10px;margin:0 0 4px;color:var(--text)">
+        <input type="checkbox" id="adbKeep" style="width:auto;margin:0">
+        <span>开机后自动保持 ADB 调试</span>
+      </label>
+      <div class="sub" id="adbHint" style="margin:0 0 10px"></div>
       <div class="row">
         <button class="ghost" onclick="location.href='/wallpapers'">壁纸管理</button>
         <button id="rotate" class="ghost">重置配对码</button>
@@ -234,6 +239,32 @@ function renderNoise(noise) {
     : "已关闭，API 走明文（仅适合可信内网）";
 }
 
+function renderAdb(state) {
+  $("adbKeep").checked = state.keep;
+  const now = state.enabled ? "当前 ADB：开" : "当前 ADB：关";
+  const hint = state.granted
+    ? "已授权：开机后被关掉会自动打开；电视使用中手动关闭则不再恢复。"
+    : "没有 WRITE_SECURE_SETTINGS，打开也不会生效。先执行：adb shell pm grant com.ts.launcher android.permission.WRITE_SECURE_SETTINGS";
+  $("adbHint").textContent = `${now} · ${hint}`;
+}
+
+async function loadAdb() {
+  renderAdb(await api("/api/adb"));
+}
+
+$("adbKeep").onchange = async () => {
+  try {
+    const state = await api("/api/adb", {
+      method: "PUT",
+      body: JSON.stringify({ keep: $("adbKeep").checked }),
+    });
+    renderAdb(state);
+    toast(state.keep ? (state.granted ? "已开启" : "已记录，但没有权限不会生效") : "已关闭");
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
 async function saveNoise(enabled) {
   const noise = await api("/api/noise", {
     method: "PUT",
@@ -279,7 +310,7 @@ async function loadPip() {
 async function boot() {
   try {
     await loadStatus();
-    await Promise.all([loadConfig(), loadCommands(), loadPip(), loadNoise()]);
+    await Promise.all([loadConfig(), loadCommands(), loadPip(), loadNoise(), loadAdb()]);
     showApp();
   } catch (error) {
     if (error.message !== "unauthorized") {

@@ -49,6 +49,11 @@ class StudyController(
     @Volatile
     private var state: StudyState = store.loadState()
 
+    /** What the last finished group did, for the console and Home Assistant. */
+    @Volatile
+    var lastResult: String = store.loadLastResult()
+        private set
+
     val rules: StudyRules get() = data.rules
 
     val voice: StudyVoice get() = data.voice
@@ -162,7 +167,8 @@ class StudyController(
 
     /** Push to HA only when something HA can see actually changed. */
     private fun publishIfChanged() {
-        val key = "${state.balanceSec / 60}|${state.paused}|${StudyLedger.isLocked(state, rules)}"
+        val key = "${state.balanceSec / 60}|${state.usedTodaySec / 60}|${state.earnedTodaySec / 60}|" +
+            "${state.paused}|${StudyLedger.isLocked(state, rules)}|${rules.enabled}|$lastResult"
         if (key == lastPublished) return
         lastPublished = key
         onStateChanged?.invoke()
@@ -201,6 +207,8 @@ class StudyController(
         data = data.copy(rules = updated.sanitized())
         // Turning the gate on starts a fresh clock; the gap while it was off is not charged.
         if (!wasEnabled && data.rules.enabled) state = state.copy(lastTickMs = 0)
+        // Turning it off must not leave a quiz on screen.
+        if (wasEnabled && !data.rules.enabled) StudyActivity.closeIfOpen()
         store.save(data)
         publishIfChanged()
         return data.rules
@@ -236,11 +244,15 @@ class StudyController(
     @Synchronized
     fun recordGroup(correct: Int, total: Int): Boolean {
         if (total <= 0) return false
-        if (correct * 100 / total < rules.passPercent) return false
-        state = StudyLedger.grant(state, rules.unlockMin, rules, System.currentTimeMillis())
-        store.saveState(state)
+        val passed = correct * 100 / total >= rules.passPercent
+        if (passed) {
+            state = StudyLedger.grant(state, rules.unlockMin, rules, System.currentTimeMillis())
+            store.saveState(state)
+        }
+        lastResult = if (passed) "通过 $correct/$total，+${rules.unlockMin} 分钟" else "未通过 $correct/$total"
+        store.saveLastResult(lastResult)
         publishIfChanged()
-        return true
+        return passed
     }
 
     @Synchronized

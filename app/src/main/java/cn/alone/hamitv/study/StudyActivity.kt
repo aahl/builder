@@ -35,6 +35,7 @@ class StudyActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.study_activity)
         study = StudyRuntime.get(this)
+        current = this
         Log.i(TAG, "quiz opened")
         if (study.bankSize == 0) {
             findViewById<TextView>(R.id.studyQuestion).text = getString(R.string.study_empty_bank)
@@ -179,12 +180,26 @@ class StudyActivity : Activity() {
 
     override fun onDestroy() {
         Log.i(TAG, "quiz destroyed, finishing=$isFinishing finished=$finished")
+        if (current === this) current = null
         super.onDestroy()
     }
 
     companion object {
         const val EXTRA_REASON = "reason"
         private const val TAG = "StudyActivity"
+
+        @Volatile
+        private var current: StudyActivity? = null
+
+        /** Switched off from the console or HA: the page must not stay up. */
+        fun closeIfOpen() {
+            val activity = current ?: return
+            activity.runOnUiThread {
+                activity.finished = true
+                activity.study.onQuizFinished()
+                if (!activity.isFinishing) activity.finish()
+            }
+        }
 
         /** The gate must not charge (or re-open) time while the child is answering. */
         @Volatile

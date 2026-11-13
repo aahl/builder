@@ -127,6 +127,8 @@ class ConfigStore(context: Context) {
             val additions = buildList {
                 if (version < 2 && array.none { it.isSelect() }) add(DEFAULT_SELECT)
                 if (version < 3 && array.none { it.isCameraSelect() }) add(DEFAULT_CAMERA_SELECT)
+                if (version < 4 && array.none { it.idIs("study_lock") }) add(STUDY_LOCK)
+                if (version < 4 && array.none { it.idIs("study_unlock") }) add(STUDY_UNLOCK)
             }
             if (additions.isNotEmpty()) {
                 out = JsonArray(additions + array).toString()
@@ -139,6 +141,9 @@ class ConfigStore(context: Context) {
 
     private fun kotlinx.serialization.json.JsonElement.isSelect(): Boolean =
         ((this as? JsonObject)?.get("type") as? JsonPrimitive)?.content == "select"
+
+    private fun kotlinx.serialization.json.JsonElement.idIs(id: String): Boolean =
+        ((this as? JsonObject)?.get("id") as? JsonPrimitive)?.content == id
 
     private fun kotlinx.serialization.json.JsonElement.isCameraSelect(): Boolean {
         val obj = this as? JsonObject ?: return false
@@ -177,7 +182,7 @@ class ConfigStore(context: Context) {
         private const val KEY_NOISE_PSK = "noise_psk"
         private const val PSK_BYTES = 32
         private const val KEY_COMMANDS_VERSION = "commands_version"
-        private const val COMMANDS_VERSION = 3
+        private const val COMMANDS_VERSION = 4
 
         private val DEFAULT_SELECT = Json.parseToJsonElement(
             """
@@ -230,6 +235,30 @@ class ConfigStore(context: Context) {
                 "type": "select",
                 "source": "cameras",
                 "icon": "mdi:cctv"
+              }
+            """.trimIndent(),
+        )
+
+        /** Study buttons, folded into existing command tables once (version 4). */
+        private val STUDY_LOCK = Json.parseToJsonElement(
+            """
+              {
+                "id": "study_lock",
+                "name": "立即出题",
+                "type": "study_lock",
+                "icon": "mdi:book-open-page-variant"
+              }
+            """.trimIndent(),
+        )
+
+        private val STUDY_UNLOCK = Json.parseToJsonElement(
+            """
+              {
+                "id": "study_unlock",
+                "name": "加 10 分钟",
+                "type": "study_unlock",
+                "icon": "mdi:clock-plus-outline",
+                "extras": { "minutes": 10 }
               }
             """.trimIndent(),
         )
@@ -300,6 +329,19 @@ class ConfigStore(context: Context) {
                 "action": "com.yicamera.ACTION_CAMERA_PLAYER",
                 "component": "com.xiaomi.smarthome.tv/com.xiaomi.cameragroup.player.YiCamerasPlayerActivity",
                 "extras": { "did": "", "model": "" }
+              },
+              {
+                "id": "study_lock",
+                "name": "立即出题",
+                "type": "study_lock",
+                "icon": "mdi:book-open-page-variant"
+              },
+              {
+                "id": "study_unlock",
+                "name": "加 10 分钟",
+                "type": "study_unlock",
+                "icon": "mdi:clock-plus-outline",
+                "extras": { "minutes": 10 }
               }
             ]
         """.trimIndent()

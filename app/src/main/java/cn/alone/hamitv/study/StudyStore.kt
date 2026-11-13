@@ -56,8 +56,7 @@ class StudyStore(private val context: Context) {
         }.onFailure { Log.w(TAG, "cannot write ${file.name}", it) }
     }
 
-    fun loadState(): StudyState = StudyState(
-        balanceSec = prefs.getLong(KEY_BALANCE, 0),
+    fun loadState(): StudyState = StudyState(        balanceSec = prefs.getLong(KEY_BALANCE, 0),
         day = prefs.getInt(KEY_DAY, 0),
         usedTodaySec = prefs.getLong(KEY_USED, 0),
         earnedTodaySec = prefs.getLong(KEY_EARNED, 0),
@@ -76,6 +75,12 @@ class StudyStore(private val context: Context) {
             .apply()
     }
 
+    fun loadLastResult(): String = prefs.getString(KEY_LAST_RESULT, "").orEmpty()
+
+    fun saveLastResult(text: String) {
+        prefs.edit().putString(KEY_LAST_RESULT, text).apply()
+    }
+
     private companion object {
         const val TAG = "StudyStore"
         const val PREFS = "study_state"
@@ -85,5 +90,6 @@ class StudyStore(private val context: Context) {
         const val KEY_EARNED = "earned_sec"
         const val KEY_PAUSED = "paused"
         const val KEY_LAST_TICK = "last_tick_ms"
+        const val KEY_LAST_RESULT = "last_result"
     }
 }

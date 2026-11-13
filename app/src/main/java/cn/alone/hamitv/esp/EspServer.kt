@@ -49,7 +49,16 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
 
 /** The three study values HA shows, bundled so a new connection and a change push the same thing. */
-internal data class StudyValues(val leftMinutes: Int, val paused: Boolean, val text: String)
+internal data class StudyValues(
+    val leftMinutes: Int,
+    val usedTodayMinutes: Int,
+    val earnedTodayMinutes: Int,
+    val dailyLeftMinutes: Int,
+    val paused: Boolean,
+    val enabled: Boolean,
+    val text: String,
+    val last: String,
+)
 
 /**
  * ESPHome native API server (plaintext).
@@ -227,20 +236,34 @@ class EspServer(
         connections.forEach { it.pushStudy(values) }
     }
 
-    /** Remaining minutes, pause switch and a human readable line, as HA should see them. */
+    /** Remaining minutes, today's numbers and a human readable line, as HA should see them. */
     internal fun studyValues(): StudyValues? {
         val controller = study ?: return null
         val state = controller.snapshot()
+        val rules = controller.rules
+        val left = (state.balanceSec / 60).toInt()
+        val used = (state.usedTodaySec / 60).toInt()
+        val earned = (state.earnedTodaySec / 60).toInt()
+        val dailyLeft = (rules.dailyCapMin - used).coerceAtLeast(0)
         val text = when {
-            !controller.rules.enabled -> "未开启"
+            !rules.enabled -> "未开启"
             // Say so instead of looking like a well-behaved child: without the
             // watcher there is no foreground package and nothing is charged.
             !StudyWatcherService.enabled(context) -> "无障碍未开启"
             state.paused -> "已暂停"
-            StudyLedger.isLocked(state, controller.rules) -> "需要答题"
-            else -> "剩余 ${state.balanceSec / 60} 分钟"
+            StudyLedger.isLocked(state, rules) -> "需要答题"
+            else -> "剩余 $left 分钟"
         }
-        return StudyValues((state.balanceSec / 60).toInt(), state.paused, text)
+        return StudyValues(
+            leftMinutes = left,
+            usedTodayMinutes = used,
+            earnedTodayMinutes = earned,
+            dailyLeftMinutes = dailyLeft,
+            paused = state.paused,
+            enabled = rules.enabled,
+            text = text,
+            last = controller.lastResult,
+        )
     }
 
     internal fun deviceName(): String = store.deviceName
@@ -545,30 +568,32 @@ internal class EspConnection(
                     .toByteArray(),
             )
         }
-        val left = registry.studyLeft
-        send(
-            EspMessageId.LIST_ENTITIES_SENSOR_RESPONSE,
-            ListEntitiesSensorResponse.newBuilder()
-                .setObjectId(left.objectId)
-                .setKey(left.key)
-                .setName(left.name)
-                .setIcon(left.icon)
-                .setUnitOfMeasurement(left.unit)
-                .setAccuracyDecimals(left.decimals)
-                .build()
-                .toByteArray(),
-        )
-        val pauseSwitch = registry.studyPause
-        send(
-            EspMessageId.LIST_ENTITIES_SWITCH_RESPONSE,
-            ListEntitiesSwitchResponse.newBuilder()
-                .setObjectId(pauseSwitch.objectId)
-                .setKey(pauseSwitch.key)
-                .setName(pauseSwitch.name)
-                .setIcon(pauseSwitch.icon)
-                .build()
-                .toByteArray(),
-        )
+        registry.studySensors.forEach { sensor ->
+            send(
+                EspMessageId.LIST_ENTITIES_SENSOR_RESPONSE,
+                ListEntitiesSensorResponse.newBuilder()
+                    .setObjectId(sensor.objectId)
+                    .setKey(sensor.key)
+                    .setName(sensor.name)
+                    .setIcon(sensor.icon)
+                    .setUnitOfMeasurement(sensor.unit)
+                    .setAccuracyDecimals(sensor.decimals)
+                    .build()
+                    .toByteArray(),
+            )
+        }
+        listOf(registry.studyPause, registry.studyEnabled).forEach { entity ->
+            send(
+                EspMessageId.LIST_ENTITIES_SWITCH_RESPONSE,
+                ListEntitiesSwitchResponse.newBuilder()
+                    .setObjectId(entity.objectId)
+                    .setKey(entity.key)
+                    .setName(entity.name)
+                    .setIcon(entity.icon)
+                    .build()
+                    .toByteArray(),
+            )
+        }
         val sensor = registry.lastCommand
         send(
             EspMessageId.LIST_ENTITIES_TEXT_SENSOR_RESPONSE,
@@ -580,17 +605,18 @@ internal class EspConnection(
                 .build()
                 .toByteArray(),
         )
-        val studyState = registry.studyState
-        send(
-            EspMessageId.LIST_ENTITIES_TEXT_SENSOR_RESPONSE,
-            ListEntitiesTextSensorResponse.newBuilder()
-                .setObjectId(studyState.objectId)
-                .setKey(studyState.key)
-                .setName(studyState.name)
-                .setIcon("mdi:book-open-page-variant")
-                .build()
-                .toByteArray(),
-        )
+        listOf(registry.studyState, registry.studyLast).forEach { entity ->
+            send(
+                EspMessageId.LIST_ENTITIES_TEXT_SENSOR_RESPONSE,
+                ListEntitiesTextSensorResponse.newBuilder()
+                    .setObjectId(entity.objectId)
+                    .setKey(entity.key)
+                    .setName(entity.name)
+                    .setIcon("mdi:book-open-page-variant")
+                    .build()
+                    .toByteArray(),
+            )
+        }
         send(
             EspMessageId.LIST_ENTITIES_DONE_RESPONSE,
             ListEntitiesDoneResponse.getDefaultInstance().toByteArray(),
@@ -642,14 +668,22 @@ internal class EspConnection(
             server.log("esp: no study account for switch ${request.key}")
             return
         }
-        if (request.key != server.registry.studyPause.key) {
-            server.log("esp: unknown switch key ${request.key}")
-            server.studyValues()?.let { pushStudy(it) }
-            return
+        when (request.key) {
+            server.registry.studyPause.key -> controller.setPaused(request.state)
+            server.registry.studyEnabled.key ->
+                controller.setRules(controller.rules.copy(enabled = request.state))
+            else -> {
+                server.log("esp: unknown switch key ${request.key}")
+                server.studyValues()?.let { pushStudy(it) }
+                return
+            }
         }
-        controller.setPaused(request.state)
         server.publishStudy()
-        server.publishLastCommand(if (request.state) "学习管控已暂停" else "学习管控已恢复")
+        val label = when (request.key) {
+            server.registry.studyPause.key -> if (request.state) "学习管控已暂停" else "学习管控已恢复"
+            else -> if (request.state) "学习管控已开启" else "学习管控已关闭"
+        }
+        server.publishLastCommand(label)
     }
 
     fun pushSelectState(select: SelectEntity, option: String?) {
@@ -665,30 +699,50 @@ internal class EspConnection(
 
     fun pushStudy(values: StudyValues) {
         if (!subscribed) return
-        send(
-            EspMessageId.SENSOR_STATE_RESPONSE,
-            SensorStateResponse.newBuilder()
-                .setKey(server.registry.studyLeft.key)
-                .setState(values.leftMinutes.toFloat())
-                .build()
-                .toByteArray(),
+        val sensors = listOf(
+            server.registry.studyLeft.key to values.leftMinutes,
+            server.registry.studyUsedToday.key to values.usedTodayMinutes,
+            server.registry.studyEarnedToday.key to values.earnedTodayMinutes,
+            server.registry.studyDailyLeft.key to values.dailyLeftMinutes,
         )
-        send(
-            EspMessageId.SWITCH_STATE_RESPONSE,
-            SwitchStateResponse.newBuilder()
-                .setKey(server.registry.studyPause.key)
-                .setState(values.paused)
-                .build()
-                .toByteArray(),
+        sensors.forEach { (key, value) ->
+            send(
+                EspMessageId.SENSOR_STATE_RESPONSE,
+                SensorStateResponse.newBuilder()
+                    .setKey(key)
+                    .setState(value.toFloat())
+                    .build()
+                    .toByteArray(),
+            )
+        }
+        val switches = listOf(
+            server.registry.studyPause.key to values.paused,
+            server.registry.studyEnabled.key to values.enabled,
         )
-        send(
-            EspMessageId.TEXT_SENSOR_STATE_RESPONSE,
-            TextSensorStateResponse.newBuilder()
-                .setKey(server.registry.studyState.key)
-                .setState(values.text)
-                .build()
-                .toByteArray(),
+        switches.forEach { (key, state) ->
+            send(
+                EspMessageId.SWITCH_STATE_RESPONSE,
+                SwitchStateResponse.newBuilder()
+                    .setKey(key)
+                    .setState(state)
+                    .build()
+                    .toByteArray(),
+            )
+        }
+        val texts = listOf(
+            server.registry.studyState.key to values.text,
+            server.registry.studyLast.key to values.last,
         )
+        texts.forEach { (key, text) ->
+            send(
+                EspMessageId.TEXT_SENSOR_STATE_RESPONSE,
+                TextSensorStateResponse.newBuilder()
+                    .setKey(key)
+                    .setState(text)
+                    .build()
+                    .toByteArray(),
+            )
+        }
     }
 
     private fun send(typeId: Int, body: ByteArray) {

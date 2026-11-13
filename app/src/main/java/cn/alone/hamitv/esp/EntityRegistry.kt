@@ -131,10 +131,54 @@ class EntityRegistry(
         icon = "mdi:pause-circle-outline",
     )
 
+    /** The gate itself, so HA can switch it on a schedule. */
+    val studyEnabled = SwitchEntity(
+        objectId = "mitv_study_enabled",
+        key = keyOf("mitv_study_enabled"),
+        name = "启用学习管控",
+        icon = "mdi:book-check-outline",
+    )
+
+    val studyUsedToday = SensorEntity(
+        objectId = "mitv_study_used_today",
+        key = keyOf("mitv_study_used_today"),
+        name = "今日已用",
+        icon = "mdi:timer-outline",
+        unit = "min",
+        decimals = 0,
+    )
+
+    val studyEarnedToday = SensorEntity(
+        objectId = "mitv_study_earned_today",
+        key = keyOf("mitv_study_earned_today"),
+        name = "今日已得",
+        icon = "mdi:timer-plus-outline",
+        unit = "min",
+        decimals = 0,
+    )
+
+    /** What is left of the daily cap, not of the balance. */
+    val studyDailyLeft = SensorEntity(
+        objectId = "mitv_study_daily_left",
+        key = keyOf("mitv_study_daily_left"),
+        name = "今日剩余额度",
+        icon = "mdi:timer-sand-complete",
+        unit = "min",
+        decimals = 0,
+    )
+
+    val studySensors: List<SensorEntity> = listOf(studyLeft, studyUsedToday, studyEarnedToday, studyDailyLeft)
+
     val studyState = TextSensorEntity(
         objectId = "mitv_study_state",
         key = keyOf("mitv_study_state"),
         name = "学习管控状态",
+    )
+
+    val studyLast = TextSensorEntity(
+        objectId = "mitv_study_last",
+        key = keyOf("mitv_study_last"),
+        name = "最近答题结果",
     )
 
     fun button(key: Int): ButtonEntity? = buttons.firstOrNull { it.key == key }

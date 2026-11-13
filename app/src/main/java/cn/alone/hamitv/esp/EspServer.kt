@@ -565,7 +565,8 @@ internal class EspConnection(
                 .build()
                 .toByteArray(),
         )
-        val sensor = registry.lastCommand        send(
+        val sensor = registry.lastCommand
+        send(
             EspMessageId.LIST_ENTITIES_TEXT_SENSOR_RESPONSE,
             ListEntitiesTextSensorResponse.newBuilder()
                 .setObjectId(sensor.objectId)

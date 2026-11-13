@@ -14,7 +14,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.ByteArrayOutputStream
 import java.io.IOException
-import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -24,11 +23,11 @@ import java.util.UUID
 /**
  * Minimal client for the voice Microsoft Edge uses for read-aloud.
  *
- * It is a websocket at `speech.platform.bing.com`; the handshake needs
- * `Sec-MS-GEC`, a hash of the current time rounded to five minutes plus the
- * public client token. After that the server expects a `speech.config` frame
- * and an SSML frame, and answers with binary frames that start with a
- * two-byte header length, a text header and then MP3 bytes.
+ * It is a websocket at `speech.platform.bing.com`; the handshake needs a DRM
+ * token (see [MsGec]) and a client version that moves with it. After that the
+ * server expects a `speech.config` frame and an SSML frame, and answers with
+ * binary frames that start with a two-byte header length, a text header and
+ * then MP3 bytes.
  *
  * No API key and no account: this is the same unauthenticated endpoint the
  * browser extension uses.
@@ -40,7 +39,14 @@ object EdgeTts {
         "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1"
     private const val OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3"
     private const val TIMEOUT_MS = 20_000L
-    private const val WIN_EPOCH_SECONDS = 11_644_473_600L
+
+    /**
+     * The service validates the client version and the DRM token together: an
+     * old version string is rejected with 403 before the websocket opens. These
+     * two move together, the way edge-tts bumps them.
+     */
+    private const val CHROMIUM_MAJOR = "143"
+    private const val SEC_MS_GEC_VERSION = "2-143.0.3650.75"
 
     private val client by lazy {
         HttpClient(CIO) {
@@ -66,19 +72,22 @@ object EdgeTts {
             append(ENDPOINT)
             append("?TrustedClientToken=").append(TRUSTED_CLIENT_TOKEN)
             append("&ConnectionId=").append(connectionId)
-            append("&Sec-MS-GEC=").append(secMsGec())
-            append("&Sec-MS-GEC-Version=1-130.0.2849.68")
+            append("&Sec-MS-GEC=").append(MsGec.token())
+            append("&Sec-MS-GEC-Version=").append(SEC_MS_GEC_VERSION)
         }
+        val muid = UUID.randomUUID().toString().replace("-", "").uppercase(Locale.US)
         val audio = ByteArrayOutputStream()
         client.webSocket({
             url(url)
             header("Pragma", "no-cache")
             header("Cache-Control", "no-cache")
             header("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
+            header("Cookie", "muid=$muid;")
             header(
                 "User-Agent",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-                    "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+                    "(KHTML, like Gecko) Chrome/$CHROMIUM_MAJOR.0.0.0 Safari/537.36 " +
+                    "Edg/$CHROMIUM_MAJOR.0.0.0",
             )
             header("Accept-Language", "en-US,en;q=0.9")
         }) {
@@ -134,17 +143,4 @@ object EdgeTts {
         SimpleDateFormat("EEE MMM dd yyyy HH:mm:ss 'GMT+0000 (Coordinated Universal Time)'", Locale.US)
             .apply { timeZone = TimeZone.getTimeZone("UTC") }
             .format(Date())
-
-    /**
-     * `Sec-MS-GEC`: SHA-256 of the Windows file-time (100 ns ticks) rounded down
-     * to five minutes plus the client token. Wrong rounding gets the handshake
-     * rejected with 403, which looks like a plain connection error.
-     */
-    internal fun secMsGec(nowMs: Long = System.currentTimeMillis()): String {
-        var ticks = (nowMs / 1000 + WIN_EPOCH_SECONDS) * 10_000_000L
-        ticks -= ticks % 3_000_000_000L
-        val digest = MessageDigest.getInstance("SHA-256")
-            .digest("$ticks$TRUSTED_CLIENT_TOKEN".toByteArray(Charsets.UTF_8))
-        return digest.joinToString("") { String.format(Locale.US, "%02X", it) }
-    }
 }

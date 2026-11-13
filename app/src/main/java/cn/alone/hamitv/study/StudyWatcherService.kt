@@ -84,7 +84,9 @@ class StudyWatcherService : AccessibilityService() {
         fun launch(context: Context, reason: String): Boolean {
             val service = instance ?: return false
             val intent = Intent(service, StudyActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                // No CLEAR_TOP: with singleInstance it can finish and recreate the
+                // page, which resets the group the child is halfway through.
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 .putExtra(StudyActivity.EXTRA_REASON, reason)
             return try {
                 service.startActivity(intent)

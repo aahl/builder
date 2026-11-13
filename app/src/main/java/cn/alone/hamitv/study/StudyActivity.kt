@@ -3,6 +3,7 @@ package cn.alone.hamitv.study
 import android.app.Activity
 import android.os.Bundle
 import android.os.SystemClock
+import android.util.Log
 import android.view.KeyEvent
 import android.view.WindowManager
 import android.widget.LinearLayout
@@ -26,19 +27,21 @@ class StudyActivity : Activity() {
     private var index = 0
     private var correct = 0
     private var answered = false
-    private var backPresses = 0
-    private var lastBackAt = 0L
+    private var finished = false
+    private val hatch = BackHatch()
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.study_activity)
         study = StudyRuntime.get(this)
+        Log.i(TAG, "quiz opened")
         if (study.bankSize == 0) {
             findViewById<TextView>(R.id.studyQuestion).text = getString(R.string.study_empty_bank)
             findViewById<TextView>(R.id.studyFeedback).text = getString(R.string.study_empty_bank_hint)
             return
         }
+        study.onQuizShown()
         startGroup()
     }
 
@@ -110,7 +113,9 @@ class StudyActivity : Activity() {
         val rows = findViewById<LinearLayout>(R.id.studyOptions)
         rows.removeAllViews()
         if (passed) {
-            rows.postDelayed({ finish() }, 1_600)
+            finished = true
+            study.onQuizFinished()
+            rows.postDelayed({ if (!isFinishing) finish() }, 1_600)
             return
         }
         val retry = layoutInflater.inflate(R.layout.study_option_row, rows, false) as TextView
@@ -120,7 +125,11 @@ class StudyActivity : Activity() {
         retry.requestFocus()
     }
 
-    /** Swallow BACK so the page cannot be dismissed with one press. */
+    /**
+     * BACK is swallowed, except for the parent hatch: five separate presses.
+     * Held-down repeats never count, so leaning on the button cannot end the
+     * quiz by accident.
+     */
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         // The remote's MENU key repeats the question, for a child who missed it.
         if (keyCode == KeyEvent.KEYCODE_MENU) {
@@ -130,26 +139,51 @@ class StudyActivity : Activity() {
             return true
         }
         if (keyCode != KeyEvent.KEYCODE_BACK) return super.onKeyDown(keyCode, event)
-        val now = SystemClock.elapsedRealtime()
-        backPresses = if (now - lastBackAt < 1_500) backPresses + 1 else 1
-        lastBackAt = now
-        if (backPresses >= 5) finish()
+        if (hatch.onBack(SystemClock.elapsedRealtime(), event?.repeatCount ?: 0)) {
+            Log.i(TAG, "parent hatch used")
+            abandon()
+        }
         return true
+    }
+
+    /** Newer back gestures never reach onKeyDown, so they get the same treatment. */
+    override fun onBackPressed() {
+        if (hatch.onBack(SystemClock.elapsedRealtime(), 0)) {
+            Log.i(TAG, "parent hatch used from onBackPressed")
+            abandon()
+        }
+    }
+
+    private fun abandon() {
+        finished = true
+        study.onQuizFinished()
+        speaker.stop()
+        finish()
     }
 
     override fun onResume() {
         super.onResume()
         visible = true
+        Log.i(TAG, "quiz resumed")
     }
 
     override fun onPause() {
         visible = false
         speaker.stop()
+        // Leaving without passing (HOME, a system dialog) puts the quiz back.
+        if (!finished) study.onQuizPaused()
+        Log.i(TAG, "quiz paused, finished=$finished")
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        Log.i(TAG, "quiz destroyed, finishing=$isFinishing finished=$finished")
+        super.onDestroy()
     }
 
     companion object {
         const val EXTRA_REASON = "reason"
+        private const val TAG = "StudyActivity"
 
         /** The gate must not charge (or re-open) time while the child is answering. */
         @Volatile

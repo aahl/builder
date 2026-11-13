@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 
 /**
@@ -23,6 +24,13 @@ class StudyController(
     private var lastSaveAt = 0L
     private var lastLaunchAt = 0L
     private var lastPublished = ""
+
+    /** True from the moment a quiz is shown until it is passed or abandoned. */
+    @Volatile
+    private var quizSession = false
+    private var lastRelaunchAt = 0L
+    private var relaunchBudgetStart = 0L
+    private var relaunchCount = 0
 
     /** Set by the service so Home Assistant sees changes without polling. */
     @Volatile
@@ -78,7 +86,57 @@ class StudyController(
     /** A window change happened; re-check right away instead of waiting for the next tick. */
     fun onForeground(pkg: String) {
         if (!running) return
+        // While a quiz is open, leaving it brings it straight back. The check is
+        // "the page is no longer visible", not "another package is in front":
+        // HOME lands on our own launcher, so the package name would be ours.
+        if (quizSession && !StudyActivity.visible) scheduleRelaunch("left")
         tick()
+    }
+
+    fun onQuizShown() {
+        quizSession = true
+        relaunchCount = 0
+        relaunchBudgetStart = 0
+    }
+
+    /** Passed or abandoned: stop holding the screen. */
+    fun onQuizFinished() {
+        quizSession = false
+    }
+
+    /** The page went to the background without finishing; this is usually HOME. */
+    fun onQuizPaused() = scheduleRelaunch("paused")
+
+    /**
+     * Bring the quiz back after the child left it. Runs through the accessibility
+     * service because a background activity start from this service would be
+     * refused. The budget keeps a set that rejects the launch from spinning.
+     */
+    @Synchronized
+    private fun scheduleRelaunch(reason: String) {
+        if (!quizSession) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastRelaunchAt < RELAUNCH_GAP_MS) return
+        val screenOn = runCatching {
+            (app.getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
+        }.getOrDefault(true)
+        if (!screenOn) return
+        if (now - relaunchBudgetStart > RELAUNCH_WINDOW_MS) {
+            relaunchBudgetStart = now
+            relaunchCount = 0
+        }
+        if (relaunchCount >= RELAUNCH_BUDGET) {
+            Log.w(TAG, "quiz relaunch budget spent, waiting a minute")
+            return
+        }
+        lastRelaunchAt = now
+        relaunchCount++
+        Log.i(TAG, "quiz left ($reason), bringing it back")
+        handler.postDelayed({
+            if (quizSession && !StudyActivity.visible) {
+                StudyWatcherService.launch(app, "relaunch:$reason")
+            }
+        }, RELAUNCH_DELAY_MS)
     }
 
     @Synchronized
@@ -241,5 +299,9 @@ class StudyController(
         const val TICK_MS = 15_000L
         const val SAVE_INTERVAL_MS = 30_000L
         const val LAUNCH_GAP_MS = 10_000L
+        const val RELAUNCH_GAP_MS = 900L
+        const val RELAUNCH_DELAY_MS = 350L
+        const val RELAUNCH_WINDOW_MS = 60_000L
+        const val RELAUNCH_BUDGET = 12
     }
 }

@@ -15,6 +15,7 @@
     <string name="study_passed">已加 %1$d 分钟</string>
     <string name="study_failed_title">还差一点</string>
     <string name="study_failed">答对 %1$d / %2$d 题</string>
+    <string name="study_keys_locked">答题期间，遥控器的返回键与主页键不生效</string>
     <string name="study_retry">再来一组</string>
     <string name="study_empty_bank">题库是空的</string>
     <string name="study_empty_bank_hint">请让家长在配置台的「学习管控」里添加题目。</string>

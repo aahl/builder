@@ -63,7 +63,7 @@ object CommandTable {
         val component = obj.text("component")?.trim()?.takeIf { it.isNotBlank() }
         // Camera commands drive the binder, select entries are containers:
         // both may carry neither action nor component.
-        val needsTarget = type != "select" && !type.startsWith("camera")
+        val needsTarget = type != "select" && !type.startsWith("camera") && !type.startsWith("study")
         if (action.isEmpty() && component == null && needsTarget) return null
 
         return CommandSpec(

@@ -52,6 +52,23 @@ data class TextSensorEntity(
     val name: String,
 )
 
+/** A numeric entity; [unit] and [decimals] are what HA shows next to the value. */
+data class SensorEntity(
+    val objectId: String,
+    val key: Int,
+    val name: String,
+    val icon: String,
+    val unit: String,
+    val decimals: Int,
+)
+
+data class SwitchEntity(
+    val objectId: String,
+    val key: Int,
+    val name: String,
+    val icon: String,
+)
+
 /**
  * Entities are derived from the command table, so adding a command is a config
  * edit rather than a rebuild. Keys must stay stable across restarts because HA
@@ -95,6 +112,29 @@ class EntityRegistry(
         objectId = "mitv_last_command",
         key = keyOf("mitv_last_command"),
         name = "最后执行的命令",
+    )
+
+    /** Remaining study time in minutes; HA can drive automations off this. */
+    val studyLeft = SensorEntity(
+        objectId = "mitv_study_left",
+        key = keyOf("mitv_study_left"),
+        name = "学习余额",
+        icon = "mdi:timer-sand",
+        unit = "min",
+        decimals = 0,
+    )
+
+    val studyPause = SwitchEntity(
+        objectId = "mitv_study_pause",
+        key = keyOf("mitv_study_pause"),
+        name = "暂停学习管控",
+        icon = "mdi:pause-circle-outline",
+    )
+
+    val studyState = TextSensorEntity(
+        objectId = "mitv_study_state",
+        key = keyOf("mitv_study_state"),
+        name = "学习管控状态",
     )
 
     fun button(key: Int): ButtonEntity? = buttons.firstOrNull { it.key == key }

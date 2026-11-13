@@ -3,6 +3,8 @@ package cn.alone.hamitv.tv
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import cn.alone.hamitv.study.StudyRuntime
+import cn.alone.hamitv.study.StudyWatcherService
 
 /**
  * Executes a [CommandSpec] with the permissions of a normal app: Intents for
@@ -41,6 +43,20 @@ class CommandExecutor(private val context: Context) {
             "camera_close" -> {
                 camera.closeFloatWindow()
                 "pip closed"
+            }
+            // Study gate actions, so both can be dragged onto the TV remote or
+            // called from HA without a separate entity type.
+            "study_lock" -> {
+                if (!StudyWatcherService.launch(context, "command")) {
+                    throw IllegalStateException("学习管控的无障碍服务未开启")
+                }
+                "quiz opened"
+            }
+            "study_unlock" -> {
+                val study = StudyRuntime.get(context)
+                val minutes = (spec.extras["minutes"] as? Number)?.toInt() ?: study.rules.unlockMin
+                study.unlock(minutes)
+                "unlocked $minutes min"
             }
             "select" -> throw IllegalArgumentException("select entries run one of their options")
             else -> throw IllegalArgumentException("unknown type ${spec.type}")

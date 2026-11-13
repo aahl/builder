@@ -15,13 +15,20 @@ import cn.alone.hamitv.esp.proto.HelloResponse
 import cn.alone.hamitv.esp.proto.ListEntitiesButtonResponse
 import cn.alone.hamitv.esp.proto.ListEntitiesDoneResponse
 import cn.alone.hamitv.esp.proto.ListEntitiesSelectResponse
+import cn.alone.hamitv.esp.proto.ListEntitiesSensorResponse
+import cn.alone.hamitv.esp.proto.ListEntitiesSwitchResponse
 import cn.alone.hamitv.esp.proto.ListEntitiesTextSensorResponse
 import cn.alone.hamitv.esp.proto.PingResponse
 import cn.alone.hamitv.esp.proto.SelectCommandRequest
 import cn.alone.hamitv.esp.proto.SelectStateResponse
+import cn.alone.hamitv.esp.proto.SensorStateResponse
+import cn.alone.hamitv.esp.proto.SwitchCommandRequest
+import cn.alone.hamitv.esp.proto.SwitchStateResponse
 import cn.alone.hamitv.esp.proto.TextSensorStateResponse
 import cn.alone.hamitv.esp.noise.CipherState
 import cn.alone.hamitv.esp.noise.NoiseHandshake
+import cn.alone.hamitv.study.StudyController
+import cn.alone.hamitv.study.StudyLedger
 import cn.alone.hamitv.tv.CommandExecutor
 import cn.alone.hamitv.tv.CommandSpec
 import cn.alone.hamitv.tv.CommandTable
@@ -40,6 +47,9 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
 
+/** The three study values HA shows, bundled so a new connection and a change push the same thing. */
+internal data class StudyValues(val leftMinutes: Int, val paused: Boolean, val text: String)
+
 /**
  * ESPHome native API server (plaintext).
  *
@@ -50,6 +60,7 @@ class EspServer(
     private val context: Context,
     private val store: ConfigStore,
     private val executor: CommandExecutor,
+    internal val study: StudyController? = null,
     internal val log: (String) -> Unit = {},
 ) {
 
@@ -208,6 +219,24 @@ class EspServer(
     fun publishLastCommand(text: String) {
         lastCommand = text
         connections.forEach { it.pushLastCommand(text) }
+    }
+
+    fun publishStudy() {
+        val values = studyValues() ?: return
+        connections.forEach { it.pushStudy(values) }
+    }
+
+    /** Remaining minutes, pause switch and a human readable line, as HA should see them. */
+    internal fun studyValues(): StudyValues? {
+        val controller = study ?: return null
+        val state = controller.snapshot()
+        val text = when {
+            !controller.rules.enabled -> "未开启"
+            state.paused -> "已暂停"
+            StudyLedger.isLocked(state, controller.rules) -> "需要答题"
+            else -> "剩余 ${state.balanceSec / 60} 分钟"
+        }
+        return StudyValues((state.balanceSec / 60).toInt(), state.paused, text)
     }
 
     internal fun deviceName(): String = store.deviceName
@@ -426,6 +455,7 @@ internal class EspConnection(
                 subscribed = true
                 pushLastCommand(server.lastCommand)
                 server.registry.selects.forEach { pushSelectState(it, server.selectState(it.key)) }
+                server.studyValues()?.let { pushStudy(it) }
             }
             EspMessageId.PING_REQUEST -> send(
                 EspMessageId.PING_RESPONSE,
@@ -437,6 +467,7 @@ internal class EspConnection(
             }
             EspMessageId.BUTTON_COMMAND_REQUEST -> onButton(body)
             EspMessageId.SELECT_COMMAND_REQUEST -> onSelect(body)
+            EspMessageId.SWITCH_COMMAND_REQUEST -> onSwitch(body)
             EspMessageId.GET_TIME_REQUEST -> send(
                 EspMessageId.GET_TIME_RESPONSE,
                 GetTimeResponse.newBuilder()
@@ -510,14 +541,48 @@ internal class EspConnection(
                     .toByteArray(),
             )
         }
-        val sensor = registry.lastCommand
+        val left = registry.studyLeft
         send(
+            EspMessageId.LIST_ENTITIES_SENSOR_RESPONSE,
+            ListEntitiesSensorResponse.newBuilder()
+                .setObjectId(left.objectId)
+                .setKey(left.key)
+                .setName(left.name)
+                .setIcon(left.icon)
+                .setUnitOfMeasurement(left.unit)
+                .setAccuracyDecimals(left.decimals)
+                .build()
+                .toByteArray(),
+        )
+        val pauseSwitch = registry.studyPause
+        send(
+            EspMessageId.LIST_ENTITIES_SWITCH_RESPONSE,
+            ListEntitiesSwitchResponse.newBuilder()
+                .setObjectId(pauseSwitch.objectId)
+                .setKey(pauseSwitch.key)
+                .setName(pauseSwitch.name)
+                .setIcon(pauseSwitch.icon)
+                .build()
+                .toByteArray(),
+        )
+        val sensor = registry.lastCommand        send(
             EspMessageId.LIST_ENTITIES_TEXT_SENSOR_RESPONSE,
             ListEntitiesTextSensorResponse.newBuilder()
                 .setObjectId(sensor.objectId)
                 .setKey(sensor.key)
                 .setName(sensor.name)
                 .setIcon("mdi:console-line")
+                .build()
+                .toByteArray(),
+        )
+        val studyState = registry.studyState
+        send(
+            EspMessageId.LIST_ENTITIES_TEXT_SENSOR_RESPONSE,
+            ListEntitiesTextSensorResponse.newBuilder()
+                .setObjectId(studyState.objectId)
+                .setKey(studyState.key)
+                .setName(studyState.name)
+                .setIcon("mdi:book-open-page-variant")
                 .build()
                 .toByteArray(),
         )
@@ -561,6 +626,27 @@ internal class EspConnection(
         }
     }
 
+    /**
+     * The pause switch. Anything else sent to this entity is answered with the
+     * real state so HA does not keep a value the TV never applied.
+     */
+    private fun onSwitch(body: ByteArray) {
+        val request = SwitchCommandRequest.parseFrom(body)
+        val controller = server.study
+        if (controller == null) {
+            server.log("esp: no study account for switch ${request.key}")
+            return
+        }
+        if (request.key != server.registry.studyPause.key) {
+            server.log("esp: unknown switch key ${request.key}")
+            server.studyValues()?.let { pushStudy(it) }
+            return
+        }
+        controller.setPaused(request.state)
+        server.publishStudy()
+        server.publishLastCommand(if (request.state) "学习管控已暂停" else "学习管控已恢复")
+    }
+
     fun pushSelectState(select: SelectEntity, option: String?) {
         if (!subscribed) return
         val builder = SelectStateResponse.newBuilder().setKey(select.key)
@@ -570,6 +656,34 @@ internal class EspConnection(
             builder.setState(option)
         }
         send(EspMessageId.SELECT_STATE_RESPONSE, builder.build().toByteArray())
+    }
+
+    fun pushStudy(values: StudyValues) {
+        if (!subscribed) return
+        send(
+            EspMessageId.SENSOR_STATE_RESPONSE,
+            SensorStateResponse.newBuilder()
+                .setKey(server.registry.studyLeft.key)
+                .setState(values.leftMinutes.toFloat())
+                .build()
+                .toByteArray(),
+        )
+        send(
+            EspMessageId.SWITCH_STATE_RESPONSE,
+            SwitchStateResponse.newBuilder()
+                .setKey(server.registry.studyPause.key)
+                .setState(values.paused)
+                .build()
+                .toByteArray(),
+        )
+        send(
+            EspMessageId.TEXT_SENSOR_STATE_RESPONSE,
+            TextSensorStateResponse.newBuilder()
+                .setKey(server.registry.studyState.key)
+                .setState(values.text)
+                .build()
+                .toByteArray(),
+        )
     }
 
     private fun send(typeId: Int, body: ByteArray) {

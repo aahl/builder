@@ -65,7 +65,8 @@ class AgentService : Service() {
         isRunning = true
         store = ConfigStore(this)
         study = StudyRuntime.get(this)
-        esp = EspServer(this, store, CommandExecutor(this)) { Log.d(TAG, it) }
+        esp = EspServer(this, store, CommandExecutor(this), study = study) { Log.d(TAG, it) }
+        study.onStateChanged = { esp.publishStudy() }
         server = ConfigServer(this, store, esp, study)
         createChannel()
         startForeground(NOTIFICATION_ID, buildNotification(localIpv4()))

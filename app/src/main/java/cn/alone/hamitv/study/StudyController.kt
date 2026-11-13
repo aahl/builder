@@ -22,6 +22,11 @@ class StudyController(
     private var running = false
     private var lastSaveAt = 0L
     private var lastLaunchAt = 0L
+    private var lastPublished = ""
+
+    /** Set by the service so Home Assistant sees changes without polling. */
+    @Volatile
+    var onStateChanged: (() -> Unit)? = null
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -91,7 +96,16 @@ class StudyController(
             store.saveState(next)
             lastSaveAt = now
         }
+        publishIfChanged()
         maybeGate(pkg, now)
+    }
+
+    /** Push to HA only when something HA can see actually changed. */
+    private fun publishIfChanged() {
+        val key = "${state.balanceSec / 60}|${state.paused}|${StudyLedger.isLocked(state, rules)}"
+        if (key == lastPublished) return
+        lastPublished = key
+        onStateChanged?.invoke()
     }
 
     private fun maybeGate(pkg: String?, now: Long) {
@@ -128,6 +142,7 @@ class StudyController(
         // Turning the gate on starts a fresh clock; the gap while it was off is not charged.
         if (!wasEnabled && data.rules.enabled) state = state.copy(lastTickMs = 0)
         store.save(data)
+        publishIfChanged()
         return data.rules
     }
 
@@ -135,6 +150,7 @@ class StudyController(
     fun setPaused(paused: Boolean): StudyState {
         state = StudyLedger.setPaused(state, paused, System.currentTimeMillis())
         store.saveState(state)
+        publishIfChanged()
         return state
     }
 
@@ -142,6 +158,7 @@ class StudyController(
     fun unlock(minutes: Int = rules.unlockMin): StudyState {
         state = StudyLedger.grant(state, minutes, rules, System.currentTimeMillis())
         store.saveState(state)
+        publishIfChanged()
         return state
     }
 
@@ -155,6 +172,7 @@ class StudyController(
         if (correct * 100 / total < rules.passPercent) return false
         state = StudyLedger.grant(state, rules.unlockMin, rules, System.currentTimeMillis())
         store.saveState(state)
+        publishIfChanged()
         return true
     }
 

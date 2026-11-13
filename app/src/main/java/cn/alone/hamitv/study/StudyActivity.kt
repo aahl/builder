@@ -32,7 +32,8 @@ class StudyActivity : Activity() {
         super.onCreate(state)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.study_activity)
-        study = StudyRuntime.get(this)        if (study.bankSize == 0) {
+        study = StudyRuntime.get(this)
+        if (study.bankSize == 0) {
             findViewById<TextView>(R.id.studyQuestion).text = getString(R.string.study_empty_bank)
             findViewById<TextView>(R.id.studyFeedback).text = getString(R.string.study_empty_bank_hint)
             return

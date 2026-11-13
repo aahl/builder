@@ -41,6 +41,7 @@ HA ──ESPHome API(:6053)──►  TV Agent  ──Intent/广播/Binder──
 | M3.5 | `camera` 实体（拉流）+ 配置台试跑接口 | 待办 |
 | M4 | mDNS 自动发现 | 完成 |
 | M4.5 | Noise PSK 加密（含配置台开关/刷新/复制） | 完成 |
+| M5 | 学习管控（看屏幕扣时、答题解锁） | 完成 |
 
 ## ESPHome 协议
 
@@ -118,6 +119,41 @@ HDMI1/2/3 = 23/24/25，TV = 1，AV = 2，VGA = 0。
 实体始终在，选项可能滞后一次摄像头增减。空选项的 select 会被 HA 拒绝，所以缓存也
 是空的时候（全新安装的第一次开机）仍然不会出现，那一次只能手工重载。关掉画中画会把它的状态
 清成 unknown。
+
+## 学习管控
+
+配置台 `http://<电视>:8122/study`。看视频消耗余额，余额见底时电视全屏出题，
+答对一组解锁 N 分钟。**默认关闭**，打开开关后才生效。
+
+- **账本**：只有「亮屏 + 前台不是豁免应用 + 答题页不在前台」才扣秒；单次 tick
+  最多扣 60 秒，进程被冻结一晚也不会一次性清零。余额跨天保留，每日上限同时限制
+  观看时长和当天能赚到的时长（`StudyLedger.kt`，纯函数，有 JVM 单测）。
+- **豁免**：自己、`systemui`、设置、桌面（`com.gathin.tvhome`）默认不控，
+  面板里还能加包名。所以按 HOME 可以离开——这个功能拦的是继续看，不是离开。
+- **答题**：单选，遥控器方向键选、OK 确认，答错显示正确答案，答完整组按正确率
+  判定；不及格可以再来一组，不扣任何东西。
+- **出题**：`StudyWatcherService` 只订阅窗口切换事件，用来取前台包名，也是唯一
+  能从后台拉起答题页的上下文（无障碍服务不受后台启动 Activity 限制）。
+- **HA 实体**：`sensor.mitv_study_left`（剩余分钟）、`switch.mitv_study_pause`
+  （暂停管控）、`text_sensor.mitv_study_state`（未开启 / 已暂停 / 需要答题 /
+  剩余 N 分钟）。
+- **命令类型**：`study_lock`（立即出题，无 target 也可以）、`study_unlock`
+  （`extras.minutes`，默认取规则里的解锁分钟）。
+
+一次性开启（**追加**，别覆盖已有的无障碍服务，否则遥控器的 Home 键会失灵）：
+
+```bash
+adb shell 'p=com.ts.launcher/cn.alone.hamitv.study.StudyWatcherService
+c=$(settings get secure enabled_accessibility_services); [ "$c" = "null" ] && c=""
+case ":$c:" in *":$p:"*) ;; *) c="${c:+$c:}$p";; esac
+settings put secure enabled_accessibility_services "$c"
+settings put secure accessibility_enabled 1
+settings get secure enabled_accessibility_services'
+```
+
+边界：强停、撤销无障碍、卸载都能打破管控，和任何非 root 方案一样；无障碍被厂商
+清掉后本应用写不回去（没有 `WRITE_SECURE_SETTINGS` 时），面板和 HA 会显示
+「未开启」而不是假装在管。
 
 ## 加密
 

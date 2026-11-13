@@ -32,8 +32,7 @@ class StudyActivity : Activity() {
         super.onCreate(state)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.study_activity)
-        study = StudyRuntime.get(this)
-        if (study.bankSize == 0) {
+        study = StudyRuntime.get(this)        if (study.bankSize == 0) {
             findViewById<TextView>(R.id.studyQuestion).text = getString(R.string.study_empty_bank)
             findViewById<TextView>(R.id.studyFeedback).text = getString(R.string.study_empty_bank_hint)
             return
@@ -123,7 +122,22 @@ class StudyActivity : Activity() {
         return true
     }
 
+    override fun onResume() {
+        super.onResume()
+        visible = true
+    }
+
+    override fun onPause() {
+        visible = false
+        super.onPause()
+    }
+
     companion object {
         const val EXTRA_REASON = "reason"
+
+        /** The gate must not charge (or re-open) time while the child is answering. */
+        @Volatile
+        var visible: Boolean = false
+            private set
     }
 }

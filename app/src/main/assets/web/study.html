@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>学习管控 · HA MiTV</title>
+<style>
+  :root {
+    --bg: #0e1216;
+    --panel: #161c22;
+    --line: #232c34;
+    --text: #e6edf3;
+    --muted: #8b9aa7;
+    --accent: #4c9aff;
+    --danger: #f0616d;
+    --ok: #3fb950;
+    --warn: #d6a13d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
+    padding: 20px 16px 48px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input, textarea, select {
+    width: 100%; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid var(--line); background: #0b0f13; color: var(--text);
+    font: inherit; outline: none;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+  textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; min-height: 120px; resize: vertical; }
+  button { border: 0; border-radius: 8px; padding: 10px 16px; font: inherit; font-weight: 600; cursor: pointer; background: var(--accent); color: #fff; }
+  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+  button.danger { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+  .kv { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .kv:last-child { border-bottom: 0; }
+  .kv span:first-child { color: var(--muted); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+  .dot.ok { background: var(--ok); }
+  .dot.bad { background: var(--danger); }
+  .dot.warn { background: var(--warn); }
+  .q { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+  .q .text { font-size: 14px; }
+  .q .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .q .tools { display: flex; gap: 8px; margin-top: 8px; }
+  .q .tools button { padding: 6px 10px; font-size: 13px; }
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: #1f2933; border: 1px solid var(--line); color: var(--text);
+    padding: 10px 16px; border-radius: 10px; font-size: 14px; opacity: 0;
+    transition: opacity .2s; pointer-events: none; max-width: 90vw;
+  }
+  .toast.show { opacity: 1; }
+  .toast.err { border-color: var(--danger); color: #ffd7da; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div id="login" class="hidden">
+    <h1>学习管控</h1>
+    <div class="sub">输入电视屏幕上显示的 4 位配对码</div>
+    <div class="card">
+      <input id="code" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="0000" autofocus
+             style="text-align:center;font-size:32px;letter-spacing:.4em;font-family:ui-monospace,Menlo,monospace">
+      <div class="row"><button id="pair">连接</button></div>
+    </div>
+  </div>
+
+  <div id="app" class="hidden">
+    <h1>学习管控</h1>
+    <div class="sub">看视频消耗余额，答对一组解锁时间。改动立即生效。</div>
+
+    <div class="card">
+      <h2>状态</h2>
+      <div id="status"></div>
+    </div>
+
+    <div class="card">
+      <h2>规则</h2>
+      <label style="display:flex;align-items:center;gap:10px;color:var(--text)">
+        <input type="checkbox" id="enabled" style="width:auto">
+        <span>启用学习管控</span>
+      </label>
+      <div class="grid">
+        <div><label for="dailyCap">每日上限（分钟）</label><input id="dailyCap" type="number" min="1" max="1440"></div>
+        <div><label for="unlock">每组解锁（分钟）</label><input id="unlock" type="number" min="1" max="240"></div>
+        <div><label for="groupSize">每组题量</label><input id="groupSize" type="number" min="1" max="20"></div>
+        <div><label for="passPercent">通过正确率（%）</label><input id="passPercent" type="number" min="0" max="100"></div>
+      </div>
+      <label for="exempt">额外豁免的应用包名（每行一个）</label>
+      <textarea id="exempt" placeholder="com.example.player"></textarea>
+      <div class="row"><button id="saveRules">保存规则</button></div>
+    </div>
+
+    <div class="card">
+      <h2>操作</h2>
+      <div class="row">
+        <button id="lock" class="ghost">立即出题</button>
+        <button id="addTen" class="ghost">加 10 分钟</button>
+        <button id="addOne" class="ghost">加 1 分钟</button>
+        <button id="pause" class="ghost">暂停管控</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>题库 <span id="bankCount" style="color:var(--muted);font-weight:400"></span></h2>
+      <input id="search" placeholder="搜索题干、选项或答案">
+      <div id="bank" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card">
+      <h2>新增 / 编辑</h2>
+      <label for="qid">ID（留空自动生成）</label>
+      <input id="qid" placeholder="q031">
+      <label for="qtext">题干</label>
+      <input id="qtext" placeholder="7 + 8 = ?">
+      <div class="grid">
+        <div><label for="o0">选项 A</label><input id="o0"></div>
+        <div><label for="o1">选项 B</label><input id="o1"></div>
+        <div><label for="o2">选项 C</label><input id="o2"></div>
+        <div><label for="o3">选项 D（可留空）</label><input id="o3"></div>
+      </div>
+      <label for="answer">正确答案</label>
+      <select id="answer">
+        <option value="0">A</option>
+        <option value="1">B</option>
+        <option value="2">C</option>
+        <option value="3">D</option>
+      </select>
+      <label for="note">解析（可选，答错时显示）</label>
+      <input id="note">
+      <div class="row">
+        <button id="saveQuestion">保存题目</button>
+        <button id="clearForm" class="ghost">清空</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>导入 / 导出</h2>
+      <div class="row">
+        <button id="export" class="ghost">导出 JSON</button>
+        <button id="import" class="ghost">导入下面的 JSON</button>
+      </div>
+      <label for="json">题库 JSON（{"items": [...]}）</label>
+      <textarea id="json" placeholder="粘贴导出的内容"></textarea>
+    </div>
+
+    <div class="row">
+      <button class="ghost" onclick="location.href='/'">返回配置台</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function toast(message, isError) {
+  const el = $("toast");
+  el.textContent = message;
+  el.className = "toast show" + (isError ? " err" : "");
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.className = "toast"; }, 2600);
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    credentials: "same-origin",
+    headers: { "X-Requested-With": "hamitv", "Content-Type": "application/json" },
+    ...options,
+  });
+  if (response.status === 401) {
+    showLogin();
+    throw new Error("unauthorized");
+  }
+  if (!response.ok) {
+    let detail = response.statusText;
+    try { detail = (await response.json()).error || detail; } catch (_) {}
+    throw new Error(detail);
+  }
+  const type = response.headers.get("content-type") || "";
+  return type.includes("json") ? response.json() : response.text();
+}
+
+function showLogin() {
+  $("login").classList.remove("hidden");
+  $("app").classList.add("hidden");
+  $("code").focus();
+}
+
+function showApp() {
+  $("login").classList.add("hidden");
+  $("app").classList.remove("hidden");
+}
+
+let bank = [];
+let searching = "";
+let timer = null;
+
+function minutes(sec) {
+  return Math.floor(sec / 60) + " 分钟";
+}
+
+function renderStatus(data) {
+  const s = data.state;
+  const d = data.diagnostics || {};
+  const locked = data.locked;
+  const gate = locked ? "已锁定，需要答题" : (s.paused ? "已暂停" : "正常");
+  $("status").innerHTML = [
+    ["管控", d.enabled === "true" ? "已开启" : "未开启"],
+    ["状态", gate],
+    ["余额", minutes(s.balanceSec)],
+    ["今日已用", minutes(s.usedTodaySec)],
+    ["今日已得", minutes(s.earnedTodaySec)],
+    ["无障碍", d.watcherConnected === "true" ? "已连接" : (d.watcherEnabled === "true" ? "已启用但未连接" : "未开启")],
+    ["当前前台", d.foreground || "—"],
+    ["服务", d.running === "true" ? "运行中" : "未运行"],
+  ].map(([k, v]) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`).join("");
+  $("bankCount").textContent = data.bankSize + " 题";
+  $("pause").textContent = s.paused ? "恢复管控" : "暂停管控";
+}
+
+function renderRules(rules) {
+  $("enabled").checked = rules.enabled;
+  $("dailyCap").value = rules.dailyCapMin;
+  $("unlock").value = rules.unlockMin;
+  $("groupSize").value = rules.groupSize;
+  $("passPercent").value = rules.passPercent;
+  $("exempt").value = (rules.exempt || []).join("\n");
+}
+
+function renderBank() {
+  const list = $("bank");
+  const needle = searching.trim().toLowerCase();
+  const items = bank.filter((item) => {
+    if (!needle) return true;
+    return (item.q + " " + item.options.join(" ") + " " + item.note).toLowerCase().includes(needle);
+  });
+  if (items.length === 0) {
+    list.innerHTML = `<div class="sub" style="margin:0">没有匹配的题目</div>`;
+    return;
+  }
+  list.innerHTML = items.map((item) => {
+    const answer = item.options[item.answer] || "?";
+    return `<div class="q">
+      <div class="text">${item.q}</div>
+      <div class="meta">${item.id} · ${item.options.length} 个选项 · 答案：${answer}</div>
+      <div class="tools">
+        <button class="ghost" data-edit="${item.id}">编辑</button>
+        <button class="danger" data-delete="${item.id}">删除</button>
+      </div>
+    </div>`;
+  }).join("");
+  list.querySelectorAll("[data-delete]").forEach((button) => {
+    button.onclick = () => removeQuestion(button.dataset.delete);
+  });
+  list.querySelectorAll("[data-edit]").forEach((button) => {
+    button.onclick = () => editQuestion(button.dataset.edit);
+  });
+}
+
+function fillForm(item) {
+  $("qid").value = item.id;
+  $("qtext").value = item.q;
+  for (let i = 0; i < 4; i++) $("o" + i).value = item.options[i] || "";
+  $("answer").value = String(item.answer);
+  $("note").value = item.note || "";
+  $("qtext").focus();
+}
+
+function editQuestion(id) {
+  const item = bank.find((entry) => entry.id === id);
+  if (item) fillForm(item);
+}
+
+function clearForm() {
+  ["qid", "qtext", "o0", "o1", "o2", "o3", "note"].forEach((id) => { $(id).value = ""; });
+  $("answer").value = "0";
+}
+
+async function removeQuestion(id) {
+  if (!confirm("删除这道题？")) return;
+  try {
+    const result = await api("/api/study/bank/" + encodeURIComponent(id), { method: "DELETE" });
+    bank = result.items;
+    renderBank();
+    toast("已删除");
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+async function loadStatus() {
+  const data = await api("/api/study");
+  renderStatus(data);
+  renderRules(data.rules);
+  return data;
+}
+
+async function loadBank() {
+  const data = await api("/api/study/bank");
+  bank = data.items;
+  renderBank();
+}
+
+async function boot() {
+  try {
+    await loadStatus();
+    await loadBank();
+    showApp();
+    if (timer) clearInterval(timer);
+    timer = setInterval(() => { loadStatus().catch(() => {}); }, 5000);
+  } catch (error) {
+    if (error.message !== "unauthorized") {
+      toast(error.message, true);
+      showLogin();
+    }
+  }
+}
+
+$("pair").onclick = async () => {
+  const code = $("code").value.trim();
+  if (!/^\d{4}$/.test(code)) return toast("请输入 4 位数字", true);
+  $("pair").disabled = true;
+  try {
+    await api("/api/pair", { method: "POST", body: JSON.stringify({ code }) });
+    $("code").value = "";
+    await boot();
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    $("pair").disabled = false;
+  }
+};
+
+$("code").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") $("pair").click();
+});
+
+$("saveRules").onclick = async () => {
+  const payload = {
+    enabled: $("enabled").checked,
+    dailyCapMin: Number($("dailyCap").value) || 60,
+    unlockMin: Number($("unlock").value) || 10,
+    groupSize: Number($("groupSize").value) || 5,
+    passPercent: Number($("passPercent").value) || 60,
+    exempt: $("exempt").value.split("\n").map((line) => line.trim()).filter(Boolean),
+  };
+  try {
+    const data = await api("/api/study/rules", { method: "PUT", body: JSON.stringify(payload) });
+    renderStatus(data);
+    renderRules(data.rules);
+    toast("规则已保存");
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
+$("lock").onclick = async () => {
+  try {
+    await api("/api/study/lock", { method: "POST", body: "{}" });
+    toast("已让电视出题");
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
+$("addTen").onclick = () => adjustTime(10);
+$("addOne").onclick = () => adjustTime(1);
+
+async function adjustTime(minutesToAdd) {
+  try {
+    await api("/api/study/unlock", { method: "POST", body: JSON.stringify({ minutes: minutesToAdd }) });
+    await loadStatus();
+    toast("已加 " + minutesToAdd + " 分钟");
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+$("pause").onclick = async () => {
+  const paused = $("pause").textContent !== "恢复管控";
+  try {
+    await api("/api/study/pause", { method: "POST", body: JSON.stringify({ paused }) });
+    await loadStatus();
+    toast(paused ? "已暂停" : "已恢复");
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
+$("search").oninput = (event) => {
+  searching = event.target.value;
+  renderBank();
+};
+
+$("saveQuestion").onclick = async () => {
+  const options = [0, 1, 2, 3].map((i) => $("o" + i).value.trim()).filter(Boolean);
+  const item = {
+    id: $("qid").value.trim() || "q" + Date.now().toString(36),
+    q: $("qtext").value.trim(),
+    options: options,
+    answer: Number($("answer").value),
+    note: $("note").value.trim(),
+  };
+  try {
+    const result = await api("/api/study/bank", { method: "POST", body: JSON.stringify(item) });
+    bank = result.items;
+    renderBank();
+    clearForm();
+    toast("已保存");
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
+$("clearForm").onclick = clearForm;
+
+$("export").onclick = async () => {
+  try {
+    const data = await api("/api/study/bank");
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "study-bank.json";
+    link.click();
+    URL.revokeObjectURL(link.href);
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
+$("import").onclick = async () => {
+  let payload;
+  try {
+    payload = JSON.parse($("json").value);
+  } catch (_) {
+    return toast("JSON 解析失败", true);
+  }
+  if (!payload || !Array.isArray(payload.items)) return toast("需要 {\"items\": [...]}", true);
+  if (!confirm("导入会替换整个题库，继续？")) return;
+  try {
+    const result = await api("/api/study/bank/import", { method: "POST", body: JSON.stringify(payload) });
+    await loadBank();
+    toast("已导入 " + result.imported + " 题");
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
+
+boot();
+</script>
+</body>
+</html>

@@ -7,6 +7,7 @@ import android.provider.Settings
 import cn.alone.hamitv.config.ConfigStore
 import cn.alone.hamitv.esp.EspServer
 import cn.alone.hamitv.net.localIpv4
+import cn.alone.hamitv.study.Question
 import cn.alone.hamitv.study.StudyController
 import cn.alone.hamitv.study.StudyRules
 import cn.alone.hamitv.study.StudyState
@@ -107,6 +108,9 @@ class ConfigServer(
             get("/wallpapers") {
                 call.respondText(asset("web/wallpapers.html"), ContentType.Text.Html)
             }
+            get("/study") {
+                call.respondText(asset("web/study.html"), ContentType.Text.Html)
+            }
             get("/health") {
                 call.respondText("ok")
             }
@@ -180,11 +184,55 @@ class ConfigServer(
             post("/api/study/lock") {
                 if (!call.authorized()) return@post
                 if (!call.ensureCsrf()) return@post
-                if (!StudyWatcherService.launch(context, "manual")) {
+                if (!StudyWatcherService.launch(this@ConfigServer.context, "manual")) {
                     call.respond(HttpStatusCode.Conflict, ErrorResponse("学习管控的无障碍服务未开启"))
                     return@post
                 }
                 call.respond(OkResponse())
+            }
+
+            get("/api/study/bank") {
+                if (!call.authorized()) return@get
+                call.respond(StudyBank(study?.bank ?: emptyList()))
+            }
+            post("/api/study/bank") {
+                if (!call.authorized()) return@post
+                if (!call.ensureCsrf()) return@post
+                val controller = study
+                if (controller == null) {
+                    call.respond(HttpStatusCode.ServiceUnavailable, ErrorResponse("学习管控未启动"))
+                    return@post
+                }
+                if (!controller.addQuestion(call.receive<Question>())) {
+                    call.respond(HttpStatusCode.BadRequest, ErrorResponse("题目需要非空 id、题干、至少两个选项和合法的答案下标"))
+                    return@post
+                }
+                call.respond(StudyBank(controller.bank))
+            }
+            delete("/api/study/bank/{id}") {
+                if (!call.authorized()) return@delete
+                if (!call.ensureCsrf()) return@delete
+                val controller = study
+                if (controller == null) {
+                    call.respond(HttpStatusCode.ServiceUnavailable, ErrorResponse("学习管控未启动"))
+                    return@delete
+                }
+                if (!controller.deleteQuestion(call.parameters["id"].orEmpty())) {
+                    call.respond(HttpStatusCode.NotFound, ErrorResponse("没有这道题"))
+                    return@delete
+                }
+                call.respond(StudyBank(controller.bank))
+            }
+            post("/api/study/bank/import") {
+                if (!call.authorized()) return@post
+                if (!call.ensureCsrf()) return@post
+                val controller = study
+                if (controller == null) {
+                    call.respond(HttpStatusCode.ServiceUnavailable, ErrorResponse("学习管控未启动"))
+                    return@post
+                }
+                val imported = controller.replaceBank(call.receive<StudyBank>().items)
+                call.respond(StudyImport(imported))
             }
 
             get("/api/commands") {
@@ -578,6 +626,12 @@ data class StudyMinutes(val minutes: Int = 0)
 
 @Serializable
 data class StudyPause(val paused: Boolean = false)
+
+@Serializable
+data class StudyBank(val items: List<Question> = emptyList())
+
+@Serializable
+data class StudyImport(val imported: Int = 0)
 
 
 @Serializable

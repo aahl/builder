@@ -1,6 +1,10 @@
 package cn.alone.hamitv.study
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
+import android.util.Log
 
 /**
  * Shared entry point for everything that touches the study account: the web
@@ -11,6 +15,20 @@ class StudyController(
     context: Context,
     private val store: StudyStore = StudyStore(context),
 ) {
+
+    private val app: Context = context.applicationContext
+    private val handler = Handler(Looper.getMainLooper())
+
+    private var running = false
+    private var lastSaveAt = 0L
+    private var lastLaunchAt = 0L
+
+    private val ticker = object : Runnable {
+        override fun run() {
+            tick()
+            handler.postDelayed(this, TICK_MS)
+        }
+    }
 
     @Volatile
     private var data: StudyFile = store.load()
@@ -37,9 +55,78 @@ class StudyController(
 
     fun pickGroup(size: Int = rules.groupSize): List<Question> = StudyLedger.pick(data.bank, size)
 
+    /** Called by the agent service once its foreground notification is up. */
+    fun start() {
+        if (running) return
+        running = true
+        handler.post(ticker)
+    }
+
+    fun stop() {
+        running = false
+        handler.removeCallbacks(ticker)
+        store.saveState(state)
+    }
+
+    /** A window change happened; re-check right away instead of waiting for the next tick. */
+    fun onForeground(pkg: String) {
+        if (!running) return
+        tick()
+    }
+
+    @Synchronized
+    private fun tick() {
+        val now = System.currentTimeMillis()
+        val screenOn = runCatching {
+            (app.getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
+        }.getOrDefault(true)
+        val pkg = StudyWatcherService.foregroundPackage
+        val active = screenOn && !StudyActivity.visible &&
+            StudyLedger.countable(pkg, exemptPackages())
+        val before = state
+        val next = StudyLedger.step(before, now, active, rules)
+        state = next
+        val lockFlipped = StudyLedger.isLocked(before, rules) != StudyLedger.isLocked(next, rules)
+        if (lockFlipped || now - lastSaveAt >= SAVE_INTERVAL_MS) {
+            store.saveState(next)
+            lastSaveAt = now
+        }
+        maybeGate(pkg, now)
+    }
+
+    private fun maybeGate(pkg: String?, now: Long) {
+        if (StudyActivity.visible) return
+        if (now - lastLaunchAt < LAUNCH_GAP_MS) return
+        if (!StudyLedger.shouldGate(state, rules, pkg, exemptPackages())) return
+        if (!StudyWatcherService.connected) {
+            Log.w(TAG, "quiz due but the watcher is not connected")
+            return
+        }
+        if (StudyWatcherService.launch(app, "auto")) lastLaunchAt = now
+    }
+
+    /**
+     * Apps that never cost time and never get the quiz: ourselves, the system UI
+     * the remote's volume bar lives in, the settings app, and the launcher. HOME
+     * therefore still works — this gate keeps a child from watching, not from
+     * leaving.
+     */
+    fun exemptPackages(): Set<String> = buildSet {
+        add(app.packageName)
+        add("android")
+        add("com.android.systemui")
+        add("com.android.settings")
+        add("com.android.tv.settings")
+        add("com.gathin.tvhome")
+        addAll(rules.exempt)
+    }
+
     @Synchronized
     fun setRules(updated: StudyRules): StudyRules {
+        val wasEnabled = data.rules.enabled
         data = data.copy(rules = updated.sanitized())
+        // Turning the gate on starts a fresh clock; the gap while it was off is not charged.
+        if (!wasEnabled && data.rules.enabled) state = state.copy(lastTickMs = 0)
         store.save(data)
         return data.rules
     }
@@ -108,6 +195,9 @@ class StudyController(
             "locked" to StudyLedger.isLocked(current, rules).toString(),
             "bank" to data.bank.size.toString(),
             "lastTickAgeSeconds" to if (current.lastTickMs <= 0) "-1" else ((nowMs - current.lastTickMs) / 1000).toString(),
+            "foreground" to (StudyWatcherService.foregroundPackage ?: "-"),
+            "quizVisible" to StudyActivity.visible.toString(),
+            "running" to running.toString(),
         )
     }
 
@@ -117,5 +207,12 @@ class StudyController(
         val current = state
         return if (day == current.day) current
         else current.copy(day = day, usedTodaySec = 0, earnedTodaySec = 0)
+    }
+
+    private companion object {
+        const val TAG = "StudyController"
+        const val TICK_MS = 15_000L
+        const val SAVE_INTERVAL_MS = 30_000L
+        const val LAUNCH_GAP_MS = 10_000L
     }
 }

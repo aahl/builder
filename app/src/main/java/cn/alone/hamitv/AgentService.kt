@@ -72,6 +72,7 @@ class AgentService : Service() {
         server.start()
         runCatching { esp.start() }
             .onFailure { Log.e(TAG, "esp server failed to start on ${store.espPort}", it) }
+        study.start()
 
         lastIp = localIpv4()
         runCatching { connectivity?.registerDefaultNetworkCallback(networkCallback) }
@@ -104,6 +105,7 @@ class AgentService : Service() {
     override fun onDestroy() {
         isRunning = false
         runCatching { connectivity?.unregisterNetworkCallback(networkCallback) }
+        study.stop()
         esp.stop()
         server.stop()
         super.onDestroy()

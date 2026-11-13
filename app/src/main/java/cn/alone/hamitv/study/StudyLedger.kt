@@ -25,10 +25,16 @@ object StudyLedger {
      * when the screen is on and the frontmost app is something the parent did
      * not exempt; answering the quiz never costs time.
      */
-    fun step(state: StudyState, nowMs: Long, active: Boolean, rules: StudyRules): StudyState {
+    fun step(
+        state: StudyState,
+        nowMs: Long,
+        active: Boolean,
+        rules: StudyRules,
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): StudyState {
         if (!rules.enabled) return state.copy(lastTickMs = nowMs)
         var next = state
-        val day = today(nowMs)
+        val day = today(nowMs, zone)
         if (day != next.day) next = next.copy(day = day, usedTodaySec = 0, earnedTodaySec = 0)
         if (!active || next.paused) return next.copy(lastTickMs = nowMs)
         // First tick after a start, or a clock that moved backwards: start counting from now.
@@ -60,8 +66,14 @@ object StudyLedger {
      * Add time after a passed group. Trims to whatever is left of today's cap, so
      * a child cannot bank hours in one afternoon.
      */
-    fun grant(state: StudyState, minutes: Int, rules: StudyRules, nowMs: Long): StudyState {
-        val day = today(nowMs)
+    fun grant(
+        state: StudyState,
+        minutes: Int,
+        rules: StudyRules,
+        nowMs: Long,
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): StudyState {
+        val day = today(nowMs, zone)
         var next = state
         if (day != next.day) next = next.copy(day = day, usedTodaySec = 0, earnedTodaySec = 0)
         if (minutes <= 0) return next

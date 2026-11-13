@@ -31,6 +31,7 @@ class StudyWatcherService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         foregroundPackage = pkg
         lastEventAt = SystemClock.elapsedRealtime()
+        StudyRuntime.get(this).onForeground(pkg)
     }
 
     override fun onInterrupt() = Unit

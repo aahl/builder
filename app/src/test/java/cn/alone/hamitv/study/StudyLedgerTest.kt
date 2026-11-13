@@ -27,21 +27,21 @@ class StudyLedgerTest {
 
     @Test
     fun disabledAccountNeverDebits() {
-        val next = StudyLedger.step(state(), at(2026, 11, 13, 8, 1), active = true, rules = rules.copy(enabled = false))
+        val next = StudyLedger.step(state(), at(2026, 11, 13, 8, 1), active = true, rules = rules.copy(enabled = false), zone = zone)
         assertEquals(600L, next.balanceSec)
         assertEquals(0L, next.usedTodaySec)
     }
 
     @Test
     fun pausedAccountDoesNotDebit() {
-        val next = StudyLedger.step(state(paused = true), at(2026, 11, 13, 8, 1), active = true, rules = rules)
+        val next = StudyLedger.step(state(paused = true), at(2026, 11, 13, 8, 1), active = true, rules = rules, zone = zone)
         assertEquals(600L, next.balanceSec)
         assertEquals(0L, next.usedTodaySec)
     }
 
     @Test
     fun inactiveForegroundDoesNotDebit() {
-        val next = StudyLedger.step(state(), at(2026, 11, 13, 8, 1), active = false, rules = rules)
+        val next = StudyLedger.step(state(), at(2026, 11, 13, 8, 1), active = false, rules = rules, zone = zone)
         assertEquals(600L, next.balanceSec)
         assertEquals(at(2026, 11, 13, 8, 1), next.lastTickMs)
     }
@@ -49,14 +49,14 @@ class StudyLedgerTest {
     @Test
     fun singleTickIsCappedAtOneMinute() {
         // The process was frozen for ten minutes; only one minute may be charged.
-        val next = StudyLedger.step(state(), at(2026, 11, 13, 8, 10), active = true, rules = rules)
+        val next = StudyLedger.step(state(), at(2026, 11, 13, 8, 10), active = true, rules = rules, zone = zone)
         assertEquals(540L, next.balanceSec)
         assertEquals(60L, next.usedTodaySec)
     }
 
     @Test
     fun balanceStopsAtZeroWhileUsageKeepsCounting() {
-        val next = StudyLedger.step(state(balanceSec = 30), at(2026, 11, 13, 8, 1), active = true, rules = rules)
+        val next = StudyLedger.step(state(balanceSec = 30), at(2026, 11, 13, 8, 1), active = true, rules = rules, zone = zone)
         assertEquals(0L, next.balanceSec)
         assertEquals(60L, next.usedTodaySec)
     }
@@ -64,10 +64,10 @@ class StudyLedgerTest {
     @Test
     fun subSecondTicksAccumulateInsteadOfBeingLost() {
         val base = at(2026, 11, 13)
-        var current = StudyLedger.step(state(lastTickMs = base), base + 900, active = true, rules = rules)
+        var current = StudyLedger.step(state(lastTickMs = base), base + 900, active = true, rules = rules, zone = zone)
         assertEquals(600L, current.balanceSec)
         // The 900 ms is kept, so the next tick crosses a whole second.
-        current = StudyLedger.step(current, base + 1_900, active = true, rules = rules)
+        current = StudyLedger.step(current, base + 1_900, active = true, rules = rules, zone = zone)
         assertEquals(599L, current.balanceSec)
         assertEquals(base + 1_900, current.lastTickMs)
     }
@@ -81,7 +81,7 @@ class StudyLedgerTest {
             earnedTodaySec = 600,
             lastTickMs = at(2026, 11, 13, 0, 0) - 15_000,
         )
-        val next = StudyLedger.step(yesterday, at(2026, 11, 13, 0, 0), active = true, rules = rules)
+        val next = StudyLedger.step(yesterday, at(2026, 11, 13, 0, 0), active = true, rules = rules, zone = zone)
         assertEquals(20261113, next.day)
         assertEquals(585L, next.balanceSec)
         assertEquals(15L, next.usedTodaySec)
@@ -90,14 +90,14 @@ class StudyLedgerTest {
 
     @Test
     fun clockGoingBackwardsDoesNotDebit() {
-        val next = StudyLedger.step(state(), at(2026, 11, 13, 7, 0), active = true, rules = rules)
+        val next = StudyLedger.step(state(), at(2026, 11, 13, 7, 0), active = true, rules = rules, zone = zone)
         assertEquals(600L, next.balanceSec)
         assertEquals(at(2026, 11, 13, 7, 0), next.lastTickMs)
     }
 
     @Test
     fun firstTickOnlyStartsTheClock() {
-        val next = StudyLedger.step(state(lastTickMs = 0), at(2026, 11, 13, 9, 0), active = true, rules = rules)
+        val next = StudyLedger.step(state(lastTickMs = 0), at(2026, 11, 13, 9, 0), active = true, rules = rules, zone = zone)
         assertEquals(600L, next.balanceSec)
         assertEquals(0L, next.usedTodaySec)
         assertEquals(at(2026, 11, 13, 9, 0), next.lastTickMs)
@@ -129,21 +129,21 @@ class StudyLedgerTest {
 
     @Test
     fun grantIsTrimmedByWhatIsLeftOfTodaysCap() {
-        val next = StudyLedger.grant(state(earnedTodaySec = 3300, balanceSec = 0), 10, rules, at(2026, 11, 13, 9, 0))
+        val next = StudyLedger.grant(state(earnedTodaySec = 3300, balanceSec = 0), 10, rules, at(2026, 11, 13, 9, 0), zone)
         assertEquals(300L, next.balanceSec)
         assertEquals(3600L, next.earnedTodaySec)
     }
 
     @Test
     fun grantIsIgnoredWhenTheCapIsAlreadySpent() {
-        val next = StudyLedger.grant(state(earnedTodaySec = 3600, balanceSec = 120), 10, rules, at(2026, 11, 13, 9, 0))
+        val next = StudyLedger.grant(state(earnedTodaySec = 3600, balanceSec = 120), 10, rules, at(2026, 11, 13, 9, 0), zone)
         assertEquals(120L, next.balanceSec)
         assertEquals(3600L, next.earnedTodaySec)
     }
 
     @Test
     fun grantIgnoresNonPositiveMinutes() {
-        val next = StudyLedger.grant(state(balanceSec = 60), 0, rules, at(2026, 11, 13, 9, 0))
+        val next = StudyLedger.grant(state(balanceSec = 60), 0, rules, at(2026, 11, 13, 9, 0), zone)
         assertEquals(60L, next.balanceSec)
     }
 

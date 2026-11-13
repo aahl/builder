@@ -69,12 +69,13 @@ class StudyActivity : Activity() {
         rows.removeAllViews()
         question.options.forEachIndexed { choice, text ->
             val row = layoutInflater.inflate(R.layout.study_option_row, rows, false) as TextView
-            row.text = text
+            // The same letter the voice reads, so a child can match sound to row.
+            row.text = "${('A' + choice)}、$text"
             row.setOnClickListener { answer(choice) }
             rows.addView(row)
         }
         rows.getChildAt(0)?.requestFocus()
-        speaker.speak(StudySpeech.text(question, index, group.size), study.voice)
+        speaker.speak(StudySpeech.text(question), study.voice)
     }
 
     private fun answer(choice: Int) {
@@ -134,7 +135,7 @@ class StudyActivity : Activity() {
         // The remote's MENU key repeats the question, for a child who missed it.
         if (keyCode == KeyEvent.KEYCODE_MENU) {
             if (group.isNotEmpty()) {
-                speaker.speak(StudySpeech.text(group[index], index, group.size), study.voice)
+                speaker.speak(StudySpeech.text(group[index]), study.voice)
             }
             return true
         }

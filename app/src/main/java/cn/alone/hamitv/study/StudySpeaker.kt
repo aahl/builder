@@ -139,16 +139,17 @@ class StudySpeaker private constructor(context: Context) {
 
 /**
  * Turns a question into something a TTS voice reads naturally: "56 - 28 = ?"
- * becomes "56 减 28 等于", and the options are announced with their letters so
- * the remote's D-pad still makes sense.
+ * becomes "56 减 28 等于", and the options are announced with the same letters
+ * the screen shows. The position ("第 1 题，共 5 题") is on screen only; reading
+ * it just delays the question.
  */
 object StudySpeech {
 
-    fun text(question: Question, index: Int, total: Int): String {
+    fun text(question: Question): String {
         val options = question.options.mapIndexed { i, option ->
             "${('A' + i)}，$option"
         }.joinToString("；")
-        return "第 ${index + 1} 题，共 $total 题。${normalize(question.q)}。选项：$options。"
+        return "${normalize(question.q).trimEnd('?', '？', ' ')}。选项：$options。"
     }
 
     private fun normalize(prompt: String): String = prompt

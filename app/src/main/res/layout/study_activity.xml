@@ -74,50 +74,56 @@
     </LinearLayout>
 
     <!-- Parent gate: five BACK presses open this instead of closing the page. -->
-    <LinearLayout
+    <FrameLayout
         android:id="@+id/studyPinOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="#F2000000"
         android:clickable="true"
         android:focusable="true"
-        android:gravity="center"
-        android:orientation="vertical"
         android:visibility="gone">
 
-        <TextView
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/study_pin_title"
-            android:textColor="#FFF2F2F5"
-            android:textSize="30sp" />
+            android:layout_gravity="center"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/studyPinDigits"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:letterSpacing="0.35"
-            android:minHeight="64dp"
-            android:minWidth="320dp"
-            android:gravity="center"
-            android:textColor="#FFFFFFFF"
-            android:textSize="44sp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/study_pin_title"
+                android:textColor="#FFF2F2F5"
+                android:textSize="30sp" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="@string/study_pin_hint"
-            android:textColor="#FF8A8A94"
-            android:textSize="18sp" />
+            <TextView
+                android:id="@+id/studyPinDigits"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:gravity="center"
+                android:letterSpacing="0.35"
+                android:minHeight="64dp"
+                android:minWidth="320dp"
+                android:textColor="#FFFFFFFF"
+                android:textSize="44sp" />
 
-        <TextView
-            android:id="@+id/studyPinError"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:textColor="@color/study_bad"
-            android:textSize="18sp" />
-    </LinearLayout>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="@string/study_pin_hint"
+                android:textColor="#FF8A8A94"
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/studyPinError"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:textColor="@color/study_bad"
+                android:textSize="18sp" />
+        </LinearLayout>
+    </FrameLayout>
 </FrameLayout>

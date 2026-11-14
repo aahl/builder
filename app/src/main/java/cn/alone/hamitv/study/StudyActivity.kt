@@ -204,14 +204,14 @@ class StudyActivity : Activity() {
         pinEntry = ""
         findViewById<TextView>(R.id.studyPinDigits).text = ""
         findViewById<TextView>(R.id.studyPinError).text = ""
-        findViewById<LinearLayout>(R.id.studyPinOverlay).visibility = View.VISIBLE
+        findViewById<View>(R.id.studyPinOverlay).visibility = View.VISIBLE
         cancelAdvance()
         speaker.stop()
     }
 
     private fun hidePin() {
         pinVisible = false
-        findViewById<LinearLayout>(R.id.studyPinOverlay).visibility = View.GONE
+        findViewById<View>(R.id.studyPinOverlay).visibility = View.GONE
         pinEntry = ""
     }
 

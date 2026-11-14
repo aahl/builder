@@ -11,7 +11,7 @@ import kotlin.random.Random
 class StudyLedgerTest {
 
     private val zone = ZoneId.of("Asia/Shanghai")
-    private val rules = StudyRules(enabled = true, dailyCapMin = 60, unlockMin = 10, groupSize = 5, passPercent = 60)
+    private val rules = StudyRules(enabled = true, dailyCapMin = 60, perCorrectMin = 10, groupSize = 5)
 
     private fun at(year: Int, month: Int, day: Int, hour: Int = 8, minute: Int = 0): Long =
         ZonedDateTime.of(year, month, day, hour, minute, 0, 0, zone).toInstant().toEpochMilli()

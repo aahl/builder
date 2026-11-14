@@ -34,15 +34,13 @@ class StudyModelsTest {
     fun clampsRulesIntoUsableRanges() {
         val rules = StudyRules(
             dailyCapMin = 0,
-            unlockMin = 999,
+            perCorrectMin = 999,
             groupSize = 0,
-            passPercent = 200,
             exempt = listOf(" a ", "a", "", " b "),
         ).sanitized()
         assertEquals(1, rules.dailyCapMin)
-        assertEquals(240, rules.unlockMin)
+        assertEquals(60, rules.perCorrectMin)
         assertEquals(1, rules.groupSize)
-        assertEquals(100, rules.passPercent)
         assertEquals(listOf("a", "b"), rules.exempt)
     }
 

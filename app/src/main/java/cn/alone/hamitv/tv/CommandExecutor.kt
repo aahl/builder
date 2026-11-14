@@ -54,7 +54,7 @@ class CommandExecutor(private val context: Context) {
             }
             "study_unlock" -> {
                 val study = StudyRuntime.get(context)
-                val minutes = (spec.extras["minutes"] as? Number)?.toInt() ?: study.rules.unlockMin
+                val minutes = (spec.extras["minutes"] as? Number)?.toInt() ?: study.rules.perCorrectMin
                 study.unlock(minutes)
                 "unlocked $minutes min"
             }

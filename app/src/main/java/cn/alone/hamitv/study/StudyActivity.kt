@@ -26,6 +26,7 @@ class StudyActivity : Activity() {
     private var group: List<Question> = emptyList()
     private var index = 0
     private var correct = 0
+    private var sessionGained = 0
     private var answered = false
     private var finished = false
     private val hatch = BackHatch()
@@ -50,6 +51,7 @@ class StudyActivity : Activity() {
         group = study.pickGroup()
         index = 0
         correct = 0
+        sessionGained = 0
         render()
     }
 
@@ -58,11 +60,8 @@ class StudyActivity : Activity() {
         val question = group[index]
         findViewById<TextView>(R.id.studyProgress).text =
             getString(R.string.study_progress, index + 1, group.size)
-        findViewById<TextView>(R.id.studyMeta).text = if (study.isLocked()) {
-            getString(R.string.study_meta_locked, study.rules.unlockMin)
-        } else {
-            getString(R.string.study_meta, study.balanceMinutes())
-        }
+        findViewById<TextView>(R.id.studyMeta).text =
+            getString(R.string.study_meta_per, study.rules.perCorrectMin)
         findViewById<TextView>(R.id.studyQuestion).text = question.q
         findViewById<TextView>(R.id.studyFeedback).text = ""
 
@@ -85,11 +84,18 @@ class StudyActivity : Activity() {
         speaker.stop()
         val question = group[index]
         val right = choice == question.answer
-        if (right) correct++
+        val gained = if (right) study.creditAnswer(true) else 0
+        if (right) {
+            correct++
+            sessionGained += gained
+        }
 
         val feedback = findViewById<TextView>(R.id.studyFeedback)
-        feedback.text = if (right) getString(R.string.study_correct)
-        else getString(R.string.study_wrong, question.options[question.answer])
+        feedback.text = when {
+            right && gained > 0 -> getString(R.string.study_answer_right_gain, gained)
+            right -> getString(R.string.study_answer_right_capped)
+            else -> getString(R.string.study_wrong, question.options[question.answer])
+        }
         feedback.setTextColor(getColor(if (right) R.color.study_ok else R.color.study_bad))
 
         val rows = findViewById<LinearLayout>(R.id.studyOptions)
@@ -102,29 +108,21 @@ class StudyActivity : Activity() {
         if (index < group.size) render() else finishGroup()
     }
 
+    /** The time was credited per answer; this is just the summary, then the page closes. */
     private fun finishGroup() {
         speaker.stop()
-        val passed = study.recordGroup(correct, group.size)
+        study.noteGroup(correct, group.size, sessionGained)
         findViewById<TextView>(R.id.studyQuestion).text =
-            getString(if (passed) R.string.study_passed_title else R.string.study_failed_title)
+            getString(R.string.study_summary, correct, group.size, sessionGained)
         val feedback = findViewById<TextView>(R.id.studyFeedback)
-        feedback.text = if (passed) getString(R.string.study_passed, study.rules.unlockMin)
-        else getString(R.string.study_failed, correct, group.size)
-        feedback.setTextColor(getColor(if (passed) R.color.study_ok else R.color.study_bad))
+        feedback.text = ""
+        findViewById<LinearLayout>(R.id.studyOptions).removeAllViews()
 
-        val rows = findViewById<LinearLayout>(R.id.studyOptions)
-        rows.removeAllViews()
-        if (passed) {
-            finished = true
-            study.onQuizFinished()
-            rows.postDelayed({ if (!isFinishing) finish() }, 1_600)
-            return
-        }
-        val retry = layoutInflater.inflate(R.layout.study_option_row, rows, false) as TextView
-        retry.text = getString(R.string.study_retry)
-        retry.setOnClickListener { startGroup() }
-        rows.addView(retry)
-        retry.requestFocus()
+        finished = true
+        study.onQuizFinished()
+        findViewById<TextView>(R.id.studyHint).postDelayed({
+            if (!isFinishing) finish()
+        }, 1_600)
     }
 
     /**

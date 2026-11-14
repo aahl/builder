@@ -20,23 +20,22 @@ data class Question(
 }
 
 /**
- * What the parent can change. [dailyCapMin] bounds both watching time and the
- * time that can be earned in a day, so the two can never drift apart.
+ * What the parent can change. Time is earned per correct answer, so there is no
+ * pass mark any more: [perCorrectMin] is what one right answer is worth, and
+ * [dailyCapMin] still bounds both watching and earning for the day.
  */
 @Serializable
 data class StudyRules(
     val enabled: Boolean = false,
     val dailyCapMin: Int = 60,
-    val unlockMin: Int = 10,
+    val perCorrectMin: Int = 2,
     val groupSize: Int = 5,
-    val passPercent: Int = 60,
     val exempt: List<String> = emptyList(),
 ) {
     fun sanitized(): StudyRules = copy(
         dailyCapMin = dailyCapMin.coerceIn(1, 24 * 60),
-        unlockMin = unlockMin.coerceIn(1, 240),
+        perCorrectMin = perCorrectMin.coerceIn(1, 60),
         groupSize = groupSize.coerceIn(1, 20),
-        passPercent = passPercent.coerceIn(0, 100),
         exempt = exempt.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(30),
     )
 }

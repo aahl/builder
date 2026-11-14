@@ -298,7 +298,7 @@ class StudyController(
     }
 
     @Synchronized
-    fun unlock(minutes: Int = rules.unlockMin): StudyState {
+    fun unlock(minutes: Int = rules.perCorrectMin): StudyState {
         state = StudyLedger.grant(state, minutes, rules, System.currentTimeMillis())
         store.saveState(state)
         publishIfChanged()
@@ -306,21 +306,30 @@ class StudyController(
     }
 
     /**
-     * Close a finished group: award time when the ratio clears the bar, otherwise
-     * leave the account alone so the child can simply try another group.
+     * Credit one correct answer. Returns the minutes actually granted, which is 0
+     * when the daily earning cap is already spent — the page shows that instead
+     * of promising time that did not arrive.
      */
     @Synchronized
-    fun recordGroup(correct: Int, total: Int): Boolean {
-        if (total <= 0) return false
-        val passed = correct * 100 / total >= rules.passPercent
-        if (passed) {
-            state = StudyLedger.grant(state, rules.unlockMin, rules, System.currentTimeMillis())
+    fun creditAnswer(correct: Boolean): Int {
+        if (!correct) return 0
+        val before = state.balanceSec
+        state = StudyLedger.grant(state, rules.perCorrectMin, rules, System.currentTimeMillis())
+        val gained = ((state.balanceSec - before) / 60).toInt()
+        if (gained > 0) {
             store.saveState(state)
+            publishIfChanged()
         }
-        lastResult = if (passed) "通过 $correct/$total，+${rules.unlockMin} 分钟" else "未通过 $correct/$total"
+        return gained
+    }
+
+    /** Close a finished group: the time was credited per answer, this is the summary. */
+    @Synchronized
+    fun noteGroup(correct: Int, total: Int, gainedMinutes: Int) {
+        if (total <= 0) return
+        lastResult = "答对 $correct/$total，+$gainedMinutes 分钟"
         store.saveLastResult(lastResult)
         publishIfChanged()
-        return passed
     }
 
     @Synchronized

@@ -98,6 +98,7 @@
         <div><label for="dailyCap">每日上限（分钟）</label><input id="dailyCap" type="number" min="1" max="1440"></div>
         <div><label for="perCorrect">每题答对（分钟）</label><input id="perCorrect" type="number" min="1" max="60"></div>
         <div><label for="groupSize">每次出几题</label><input id="groupSize" type="number" min="1" max="20"></div>
+        <div><label for="exitPin">退出密码（1上 2下 3左 4右）</label><input id="exitPin" inputmode="numeric" maxlength="8" placeholder="1234"></div>
       </div>
       <label for="exempt">额外豁免的应用包名（每行一个）</label>
       <textarea id="exempt" placeholder="com.example.player"></textarea>
@@ -268,6 +269,7 @@ function renderRules(rules, force) {
   $("dailyCap").value = rules.dailyCapMin;
   $("perCorrect").value = rules.perCorrectMin;
   $("groupSize").value = rules.groupSize;
+  $("exitPin").value = rules.exitPin;
   $("exempt").value = (rules.exempt || []).join("\n");
 }
 
@@ -414,6 +416,7 @@ $("saveRules").onclick = async () => {
     dailyCapMin: Number($("dailyCap").value) || 60,
     perCorrectMin: Number($("perCorrect").value) || 2,
     groupSize: Number($("groupSize").value) || 5,
+    exitPin: $("exitPin").value.trim() || "1234",
     exempt: $("exempt").value.split("\n").map((line) => line.trim()).filter(Boolean),
   };
   try {
@@ -427,7 +430,7 @@ $("saveRules").onclick = async () => {
   }
 };
 
-["enabled", "dailyCap", "perCorrect", "groupSize", "exempt"].forEach((id) => {
+["enabled", "dailyCap", "perCorrect", "groupSize", "exitPin", "exempt"].forEach((id) => {
   const field = $(id);
   field.addEventListener("input", markRulesDirty);
   field.addEventListener("change", markRulesDirty);

@@ -24,11 +24,11 @@ class StudySpeechTest {
     }
 
     @Test
-    fun aWrongAnswerReadsTheQuestionAndTheRightOption() {
+    fun aWrongAnswerSaysSoThenReadsTheQuestionAndTheRightOption() {
         val question = Question(id = "q", q = "19 - 4 = ?", options = listOf("13", "14", "15", "16"), answer = 2)
         val text = StudySpeech.wrongAnswer(question)
-        assertTrue(text.startsWith("19 减 4 等于"))
-        assertTrue(text.contains("答错了，正确答案是 15"))
+        assertTrue(text.startsWith("答错了。19 减 4 等于"))
+        assertTrue(text.contains("正确答案是 15"))
     }
 
     @Test

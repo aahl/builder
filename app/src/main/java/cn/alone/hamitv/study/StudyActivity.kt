@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
 import android.view.KeyEvent
+import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -28,6 +29,9 @@ class StudyActivity : Activity() {
     private var correct = 0
     private var sessionGained = 0
     private var advanceTask: Runnable? = null
+    private var pinVisible = false
+    private var pinEntry = ""
+    private var pinAttempts = 0
     private var answered = false
     private var finished = false
     private val hatch = BackHatch()
@@ -171,7 +175,7 @@ class StudyActivity : Activity() {
         if (keyCode != KeyEvent.KEYCODE_BACK) return super.onKeyDown(keyCode, event)
         if (hatch.onBack(SystemClock.elapsedRealtime(), event?.repeatCount ?: 0)) {
             Log.i(TAG, "parent hatch used")
-            abandon()
+            promptExit()
         }
         return true
     }
@@ -180,7 +184,81 @@ class StudyActivity : Activity() {
     override fun onBackPressed() {
         if (hatch.onBack(SystemClock.elapsedRealtime(), 0)) {
             Log.i(TAG, "parent hatch used from onBackPressed")
+            promptExit()
+        }
+    }
+
+    /** While the gate is up every key belongs to it, including the arrows. */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (!pinVisible) return super.dispatchKeyEvent(event)
+        if (event.action == KeyEvent.ACTION_DOWN) handlePinKey(event.keyCode)
+        return true
+    }
+
+    /**
+     * Five BACK presses do not close the page any more; they open the parent gate.
+     * The password is a sequence of arrows, stored as 1=up 2=down 3=left 4=right.
+     */
+    private fun promptExit() {
+        pinVisible = true
+        pinEntry = ""
+        findViewById<TextView>(R.id.studyPinDigits).text = ""
+        findViewById<TextView>(R.id.studyPinError).text = ""
+        findViewById<LinearLayout>(R.id.studyPinOverlay).visibility = View.VISIBLE
+        cancelAdvance()
+        speaker.stop()
+    }
+
+    private fun hidePin() {
+        pinVisible = false
+        findViewById<LinearLayout>(R.id.studyPinOverlay).visibility = View.GONE
+        pinEntry = ""
+    }
+
+    private fun handlePinKey(keyCode: Int) {
+        when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_UP -> appendPin('1')
+            KeyEvent.KEYCODE_DPAD_DOWN -> appendPin('2')
+            KeyEvent.KEYCODE_DPAD_LEFT -> appendPin('3')
+            KeyEvent.KEYCODE_DPAD_RIGHT -> appendPin('4')
+            KeyEvent.KEYCODE_BACK -> {
+                hidePin()
+                findViewById<LinearLayout>(R.id.studyOptions).getChildAt(0)?.requestFocus()
+            }
+        }
+    }
+
+    private fun appendPin(digit: Char) {
+        val pin = study.rules.exitPin
+        if (pinEntry.length >= pin.length) return
+        pinEntry += digit
+        findViewById<TextView>(R.id.studyPinDigits).text = pinEntry.map {
+            when (it) {
+                '1' -> "↑"
+                '2' -> "↓"
+                '3' -> "←"
+                else -> "→"
+            }
+        }.joinToString(" ")
+
+        if (pinEntry.length < pin.length) return
+        if (pinEntry == pin) {
+            Log.i(TAG, "parent gate passed")
+            hidePin()
             abandon()
+            return
+        }
+
+        pinAttempts++
+        pinEntry = ""
+        findViewById<TextView>(R.id.studyPinDigits).text = ""
+        if (pinAttempts >= PIN_ATTEMPTS) {
+            Log.i(TAG, "parent gate locked after $pinAttempts tries")
+            findViewById<TextView>(R.id.studyPinError).text = getString(R.string.study_pin_locked)
+            pinAttempts = 0
+            hidePin()
+        } else {
+            findViewById<TextView>(R.id.studyPinError).text = getString(R.string.study_pin_wrong)
         }
     }
 
@@ -223,6 +301,7 @@ class StudyActivity : Activity() {
         private const val WRONG_AFTER_SPEECH_MS = 350L
         private const val WRONG_MAX_WAIT_MS = 15_000L
         private const val WRONG_NO_VOICE_MS = 2_500L
+        private const val PIN_ATTEMPTS = 3
 
         @Volatile
         private var current: StudyActivity? = null

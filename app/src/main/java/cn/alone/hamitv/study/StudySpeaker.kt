@@ -169,10 +169,10 @@ object StudySpeech {
         return "${normalize(question.q)}。选项：$options。"
     }
 
-    /** A wrong answer: read the question again, then the right option. */
+    /** A wrong answer: say so first, then the question, then the right option. */
     fun wrongAnswer(question: Question): String {
         val answer = question.options.getOrNull(question.answer).orEmpty()
-        return "${normalize(question.q)}。答错了，正确答案是 $answer。"
+        return "答错了。${normalize(question.q)}。正确答案是 $answer。"
     }
 
     private fun normalize(prompt: String): String = prompt

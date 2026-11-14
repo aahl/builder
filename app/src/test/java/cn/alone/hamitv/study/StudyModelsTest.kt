@@ -73,4 +73,11 @@ class StudyModelsTest {
         assertEquals("zh-CN-YunxiNeural", voice.voice)
         assertEquals("-15%", voice.rate)
     }
+
+    @Test
+    fun exitPinKeepsOnlyArrowDigitsAndFallsBackWhenTooShort() {
+        assertEquals("1324", StudyRules(exitPin = "1 3-2 4").sanitized().exitPin)
+        assertEquals("1234", StudyRules(exitPin = "9x").sanitized().exitPin)
+        assertEquals("12341234", StudyRules(exitPin = "123412349").sanitized().exitPin)
+    }
 }

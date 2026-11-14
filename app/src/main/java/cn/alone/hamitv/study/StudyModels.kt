@@ -31,12 +31,17 @@ data class StudyRules(
     val perCorrectMin: Int = 2,
     val groupSize: Int = 5,
     val exempt: List<String> = emptyList(),
+    /** Parent gate on the quiz page: digits 1=up, 2=down, 3=left, 4=right. */
+    val exitPin: String = "1234",
 ) {
     fun sanitized(): StudyRules = copy(
         dailyCapMin = dailyCapMin.coerceIn(1, 24 * 60),
         perCorrectMin = perCorrectMin.coerceIn(1, 60),
         groupSize = groupSize.coerceIn(1, 20),
         exempt = exempt.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(30),
+        exitPin = exitPin.filter { it in '1'..'4' }
+            .take(8)
+            .let { if (it.length >= 3) it else "1234" },
     )
 }
 

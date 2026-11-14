@@ -12,6 +12,10 @@
     <string name="study_answer_right_capped">答对了，今日额度已满</string>
     <string name="study_summary">答对 %1$d / %2$d 题，共 %3$d 分钟</string>
     <string name="study_wrong">答错了，正确答案：%1$s</string>
+    <string name="study_pin_title">家长验证</string>
+    <string name="study_pin_hint">用遥控器的上 / 下 / 左 / 右输入密码，返回键取消</string>
+    <string name="study_pin_wrong">密码不对</string>
+    <string name="study_pin_locked">试错次数太多，请退出后重新操作</string>
     <string name="study_keys_locked">答题期间，遥控器的返回键与主页键不生效</string>
     <string name="study_empty_bank">题库是空的</string>
     <string name="study_empty_bank_hint">请让家长在配置台的「学习管控」里添加题目。</string>

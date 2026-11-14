@@ -305,7 +305,13 @@ class StudyController(
         add("com.android.systemui")
         add("com.android.settings")
         add("com.android.tv.settings")
+        add("com.xiaomi.mitv.settings")
         add("com.gathin.tvhome")
+        // An idle set must not be interrupted by a quiz nobody is watching.
+        add("com.mitv.screensaver")
+        add("com.android.dreams.basic")
+        add("com.android.dreams.phototable")
+        add("com.xiaomi.mibox.lockscreen")
         addAll(rules.exempt)
     }
 

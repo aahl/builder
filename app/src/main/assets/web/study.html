@@ -248,6 +248,7 @@ function renderStatus(data) {
   const d = data.diagnostics || {};
   const locked = data.locked;
   const gate = locked ? "已锁定，需要答题" : (s.paused ? "已暂停" : "正常");
+  const mismatch = d.watcherForeground && d.watcherForeground !== d.foreground;
   $("status").innerHTML = [
     ["管控", d.enabled === "true" ? "已开启" : "未开启"],
     ["状态", gate],
@@ -256,6 +257,7 @@ function renderStatus(data) {
     ["今日已得", minutes(s.earnedTodaySec)],
     ["无障碍", d.watcherConnected === "true" ? "已连接" : (d.watcherEnabled === "true" ? "已启用但未连接" : "未开启（只计时，不弹题）")],
     ["当前前台", d.foreground || "—"],
+    ...(mismatch ? [["窗口事件", d.watcherForeground]] : []),
     ["服务", d.running === "true" ? "运行中" : "未运行"],
   ].map(([k, v]) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`).join("");
   $("bankCount").textContent = data.bankSize + " 题";

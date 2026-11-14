@@ -25,6 +25,12 @@ class StudyController(
     private val handler = Handler(Looper.getMainLooper())
     private val usage = StudyUsage(app)
 
+    init {
+        // Usage stats answer a couple of seconds later on a worker thread; re-check
+        // as soon as the answer changes instead of waiting for the next tick.
+        usage.onChanged = { handler.post { if (running) tick() } }
+    }
+
     private var running = false
     private var lastSaveAt = 0L
     private var lastLaunchAt = 0L

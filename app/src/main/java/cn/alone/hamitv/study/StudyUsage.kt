@@ -35,6 +35,14 @@ class StudyUsage(private val context: Context) {
     /** Wall clock of the end of the last query window. */
     private var cursor = 0L
 
+    /**
+     * Called on a worker thread whenever the answer changes. The ticker runs every
+     * 15 s; without this, switching to the launcher would leave the old app cached
+     * long enough to charge it and pop the quiz on the desktop.
+     */
+    @Volatile
+    var onChanged: ((String) -> Unit)? = null
+
     fun hasAccess(): Boolean = try {
         val ops = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
         val mode = if (Build.VERSION.SDK_INT >= 29) {
@@ -65,7 +73,10 @@ class StudyUsage(private val context: Context) {
             thread(name = "study-usage", isDaemon = true) {
                 try {
                     val pkg = query()
-                    if (pkg != null) cached = pkg
+                    if (pkg != null && pkg != cached) {
+                        cached = pkg
+                        onChanged?.invoke(pkg)
+                    }
                 } finally {
                     querying = false
                 }

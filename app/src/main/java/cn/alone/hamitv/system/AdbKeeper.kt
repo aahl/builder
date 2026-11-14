@@ -43,12 +43,30 @@ object AdbKeeper {
     private const val PORT = 5555
     private const val BOOT_WINDOW_MS = 3 * 60_000L
 
+    /** A switch-off within this window after waking is firmware, not the owner. */
+    private const val WAKE_SLACK_MS = 60_000L
+
+    /** How long after waking adbd may still be starting, so a probe is worth doing. */
+    private const val LISTEN_PROBE_MS = 120_000L
+    private const val TOGGLE_MIN_GAP_MS = 30_000L
+
     private val worker = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "adb-keeper").apply { isDaemon = true }
     }
     private val dancing = AtomicBoolean(false)
     private val danced = AtomicBoolean(false)
     private val handler = Handler(Looper.getMainLooper())
+
+    /** Set when we walk adb_enabled 0 -> 1 ourselves; the observer must not read that as the owner. */
+    @Volatile
+    private var toggling = false
+
+    /** When the screen last lit. Xiaomi switches ADB off in standby, so wake is a window, not user intent. */
+    @Volatile
+    private var screenOnAt = 0L
+
+    @Volatile
+    private var lastToggleAt = 0L
 
     @Volatile private var appContext: Context? = null
     private var started = false
@@ -62,7 +80,12 @@ object AdbKeeper {
 
     private val screenOn = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
+            screenOnAt = SystemClock.elapsedRealtime()
+            // One probe per wake: firmware may have killed adbd while adb_enabled still says 1.
+            danced.set(false)
             ensure(context)
+            // adbd needs a moment after the panel comes up; look again once.
+            handler.postDelayed({ ensure(context) }, 6_000)
         }
     }
 
@@ -99,13 +122,21 @@ object AdbKeeper {
     }
 
     private fun settingChanged(context: Context) {
+        // Our own 0 -> 1 walk writes a 0 on purpose; not the owner's doing.
+        if (toggling) return
         val store = ConfigStore(context)
         if (!store.keepAdb) return
         val enabled = adbEnabled(context)
         if (enabled == 0) {
             val interactive = (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)
                 ?.isInteractive == true
-            if (interactive && SystemClock.elapsedRealtime() > BOOT_WINDOW_MS) {
+            val now = SystemClock.elapsedRealtime()
+            val bootWindow = now <= BOOT_WINDOW_MS
+            // Xiaomi clears ADB in standby; a switch-off within a minute of waking
+            // is firmware, not the owner. Only a deliberate switch-off with the TV
+            // awake and settled ends keep_adb.
+            val justWoke = screenOnAt > 0 && now - screenOnAt <= WAKE_SLACK_MS
+            if (interactive && !bootWindow && !justWoke) {
                 store.keepAdb = false
                 Log.i(TAG, "ADB switched off while the TV is in use; keep_adb is off now")
                 return
@@ -115,7 +146,7 @@ object AdbKeeper {
     }
 
     private fun ensureBlocking(context: Context) {
-        if (dancing.get()) return
+        if (dancing.get() || toggling) return
         if (!ConfigStore(context).keepAdb) return
         if (context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) !=
             PackageManager.PERMISSION_GRANTED
@@ -138,22 +169,28 @@ object AdbKeeper {
     }
 
     /**
-     * adb_enabled = 1 does not mean adbd listens: after boot some firmware leaves it
-     * out of TCP mode, and only a 0 -> 1 transition of the setting restarts it.
-     * Android 11+ uses wireless debugging on its own port, so 5555 is closed by design:
-     * skip the probe there. Only in the first minutes after boot, and at most once.
+     * adb_enabled = 1 does not mean adbd listens: after boot, and again after a
+     * Xiaomi standby, firmware leaves it out of TCP mode while the flag stays 1.
+     * Only a 0 -> 1 transition of the setting restarts it. Probed during the boot
+     * window and for two minutes after each wake, at most once per wake; Android
+     * 11+ uses wireless debugging on its own port, so 5555 is closed by design.
      */
     private fun ensureListening(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R || Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
-        if (SystemClock.elapsedRealtime() > BOOT_WINDOW_MS || danced.get()) return
+        val now = SystemClock.elapsedRealtime()
+        val bootWindow = now <= BOOT_WINDOW_MS
+        val justWoke = screenOnAt > 0 && now - screenOnAt <= LISTEN_PROBE_MS
+        if ((!bootWindow && !justWoke) || danced.get()) return
         if (listening()) {
             Log.d(TAG, "adbd is listening on $PORT")
             return
         }
         synchronized(this) {
             if (danced.getAndSet(true)) return
-            if (SystemClock.elapsedRealtime() > BOOT_WINDOW_MS) return
+            if (SystemClock.elapsedRealtime() - lastToggleAt < TOGGLE_MIN_GAP_MS) return
+            lastToggleAt = SystemClock.elapsedRealtime()
             dancing.set(true)
+            toggling = true
             try {
                 runCatching {
                     Settings.Global.putInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0)
@@ -162,6 +199,7 @@ object AdbKeeper {
                     Log.i(TAG, "adbd was not listening; toggled adb_enabled 0 -> 1")
                 }.onFailure { Log.w(TAG, "cannot toggle adb_enabled", it) }
             } finally {
+                toggling = false
                 dancing.set(false)
             }
         }

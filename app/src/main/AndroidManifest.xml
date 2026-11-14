@@ -78,6 +78,18 @@
                 android:resource="@xml/study_watcher" />
         </service>
 
+        <!-- The system re-binds this after a force stop; it starts the agent and
+             re-arms the watcher. Reads no notification content. -->
+        <service
+            android:name=".study.StudyRevivalService"
+            android:exported="true"
+            android:label="@string/study_watcher_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <activity
             android:name=".study.StudyActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|navigation"

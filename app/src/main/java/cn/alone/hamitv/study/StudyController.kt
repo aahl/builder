@@ -1,6 +1,10 @@
 package cn.alone.hamitv.study
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -25,6 +29,24 @@ class StudyController(
     private var lastSaveAt = 0L
     private var lastLaunchAt = 0L
     private var lastPublished = ""
+    private var lastRearmAt = 0L
+    private var screenReceiverRegistered = false
+
+    /**
+     * Xiaomi clears the accessibility grant in standby, and ADB with it. There is
+     * no callback for "the grant was revoked", so look again a few seconds after
+     * the screen lights.
+     */
+    private val screenOn = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            handler.postDelayed({
+                if (running && rules.enabled && !StudyWatcherService.connected) {
+                    Log.i(TAG, "screen on and the watcher is gone; re-arming")
+                    StudyWatcherService.rearmAsync(app)
+                }
+            }, SCREEN_ON_GRACE_MS)
+        }
+    }
 
     /** True from the moment a quiz is shown until it is passed or abandoned. */
     @Volatile
@@ -81,19 +103,39 @@ class StudyController(
         if (running) return
         running = true
         handler.post(ticker)
+        registerScreenReceiver()
         // Firmwares drop the accessibility binding after an update while the
-        // setting still lists us; re-writing it makes the system bind again.
+        // setting still lists us; re-arming re-creates the binding.
         handler.postDelayed({
-            if (rules.enabled && !StudyWatcherService.connected) {
-                StudyWatcherService.ensureEnabled(app)
-            }
-        }, 8_000)
+            if (rules.enabled && !StudyWatcherService.connected) StudyWatcherService.rearmAsync(app)
+        }, START_GRACE_MS)
     }
 
     fun stop() {
         running = false
         handler.removeCallbacks(ticker)
+        unregisterScreenReceiver()
         store.saveState(state)
+    }
+
+    private fun registerScreenReceiver() {
+        if (screenReceiverRegistered) return
+        val filter = IntentFilter(Intent.ACTION_SCREEN_ON)
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                app.registerReceiver(screenOn, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                app.registerReceiver(screenOn, filter)
+            }
+            screenReceiverRegistered = true
+        }.onFailure { Log.w(TAG, "cannot watch the screen", it) }
+    }
+
+    private fun unregisterScreenReceiver() {
+        if (!screenReceiverRegistered) return
+        runCatching { app.unregisterReceiver(screenOn) }
+        screenReceiverRegistered = false
     }
 
     /** A window change happened; re-check right away instead of waiting for the next tick. */
@@ -170,7 +212,25 @@ class StudyController(
             lastSaveAt = now
         }
         publishIfChanged()
+        guardWatcher()
         maybeGate(pkg, now)
+    }
+
+    /**
+     * A watcher that is bound but keeps reporting an app usage stats disagrees
+     * with is deaf: the system still lists it, yet no window events arrive.
+     */
+    private fun guardWatcher() {
+        if (!rules.enabled || !StudyWatcherService.connected) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastRearmAt < REARM_COOLDOWN_MS) return
+        val watcherPkg = StudyWatcherService.foregroundPackage ?: return
+        val usagePkg = usage.current() ?: return
+        if (usagePkg == watcherPkg) return
+        if (now - StudyWatcherService.lastEventAt < EVENT_STALE_MS) return
+        lastRearmAt = now
+        Log.i(TAG, "watcher looks deaf ($watcherPkg vs usage $usagePkg); re-arming")
+        StudyWatcherService.rearmAsync(app)
     }
 
     /** Push to HA only when something HA can see actually changed. */
@@ -324,5 +384,9 @@ class StudyController(
         const val RELAUNCH_DELAY_MS = 350L
         const val RELAUNCH_WINDOW_MS = 60_000L
         const val RELAUNCH_BUDGET = 12
+        const val START_GRACE_MS = 8_000L
+        const val SCREEN_ON_GRACE_MS = 4_000L
+        const val REARM_COOLDOWN_MS = 10 * 60_000L
+        const val EVENT_STALE_MS = 120_000L
     }
 }

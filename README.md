@@ -163,6 +163,16 @@ settings get secure enabled_accessibility_services'
 覆盖安装（`adb install -r`）后系统会清掉这条授权，需要再执行一次；面板和 HA
 在那之后会显示「无障碍未开启」，不是状态坏了。
 
+无障碍掉了、或固件把它从列表里摘掉时，应用会自己重绑：启动 8 秒后、亮屏 4 秒后、
+以及发现「绑上了但窗口事件两分钟没更新」时，都会走一次**两段式重绑**（先把自己摘出
+列表、等 1.5 秒、重读列表、再加回）——同值重写不会触发系统重绑。这条路径需要
+`WRITE_SECURE_SETTINGS`。另外有一个复活通道：进程被强停后，系统会重新绑定通知监听，
+它负责拉起 Agent 并重绑无障碍，一次性授权：
+
+```bash
+adb shell cmd notification allow_listener com.ts.launcher/cn.alone.hamitv.study.StudyRevivalService
+```
+
 边界：强停、撤销无障碍、卸载都能打破管控，和任何非 root 方案一样；无障碍被厂商
 清掉后本应用写不回去（没有 `WRITE_SECURE_SETTINGS` 时），面板和 HA 会显示
 「未开启」而不是假装在管。

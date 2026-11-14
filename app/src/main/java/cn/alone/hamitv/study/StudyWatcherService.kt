@@ -10,6 +10,7 @@ import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityManager
+import kotlin.concurrent.thread
 
 /**
  * Watches which app is in front. It is the only component allowed to start the
@@ -55,6 +56,7 @@ class StudyWatcherService : AccessibilityService() {
 
     companion object {
         const val TAG = "StudyWatcher"
+        private const val REARM_GAP_MS = 1_500L
 
         @Volatile
         var connected: Boolean = false
@@ -83,32 +85,51 @@ class StudyWatcherService : AccessibilityService() {
         }
 
         /**
-         * Firmwares drop the binding after an update or a force-stop while the
-         * setting still names us. Writing the list again (same entries, ourselves
-         * included) makes the system bind again. Needs WRITE_SECURE_SETTINGS; with
-         * no permission this is a no-op and the caller stays on the usage fallback.
+         * Two-phase re-arm, the trick Aerial uses: write ourselves out of the list,
+         * wait, re-read it, then add ourselves back. Writing the same string back
+         * does not change the value, so the system never rebinds — that is why the
+         * first version of this failed. Re-reading keeps entries other owners added
+         * in the meantime. Needs WRITE_SECURE_SETTINGS.
          */
-        fun ensureEnabled(context: Context): Boolean {
-            if (connected || enabled(context)) return true
-            return try {
-                val resolver = context.contentResolver
-                val current = Settings.Secure.getString(resolver, "enabled_accessibility_services").orEmpty()
-                val me = ComponentName(context, StudyWatcherService::class.java).flattenToString()
-                val entries = current.split(':').filter { it.isNotBlank() }.toMutableList()
-                if (me !in entries) entries.add(me)
-                Settings.Secure.putString(
-                    resolver,
-                    "enabled_accessibility_services",
-                    entries.joinToString(":"),
-                )
-                Settings.Secure.putInt(resolver, "accessibility_enabled", 1)
-                val ok = enabled(context)
-                Log.i(TAG, "re-armed the watcher: $ok")
-                ok
-            } catch (e: Exception) {
-                Log.w(TAG, "cannot re-enable the watcher", e)
-                false
+        private val rearming = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        fun rearmAsync(context: Context) {
+            val app = context.applicationContext
+            if (!rearming.compareAndSet(false, true)) return
+            thread(name = "study-rearm", isDaemon = true) {
+                try {
+                    // Unconditional: the problem case is "listed and bound on paper,
+                    // yet no events arrive", where enabled() already says true.
+                    rearm(app)
+                } catch (e: Exception) {
+                    Log.w(TAG, "cannot re-arm the watcher", e)
+                } finally {
+                    rearming.set(false)
+                }
             }
+        }
+
+        /** Blocking; call on a worker thread. */
+        fun rearm(context: Context): Boolean {
+            val app = context.applicationContext
+            val resolver = app.contentResolver
+            val me = ComponentName(app, StudyWatcherService::class.java).flattenToString()
+            val key = Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            val current = Settings.Secure.getString(resolver, key).orEmpty()
+            val entries = current.split(':').filter { it.isNotBlank() }
+            if (me in entries) {
+                Settings.Secure.putString(resolver, key, entries.filter { it != me }.joinToString(":"))
+                Thread.sleep(REARM_GAP_MS)
+            }
+            val fresh = Settings.Secure.getString(resolver, key).orEmpty()
+            val next = fresh.split(':').filter { it.isNotBlank() }.toMutableList()
+            if (me !in next) next.add(me)
+            Settings.Secure.putString(resolver, key, next.joinToString(":"))
+            Settings.Secure.putInt(resolver, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
+            Thread.sleep(800)
+            val ok = enabled(app)
+            Log.i(TAG, "re-armed the watcher: $ok")
+            return ok
         }
 
         /** Bring the quiz page up. Returns false when the service is not connected. */

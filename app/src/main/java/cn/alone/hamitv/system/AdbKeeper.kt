@@ -108,6 +108,17 @@ object AdbKeeper {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             app.registerReceiver(screenOn, filter)
         }
+        // The process may have been dead in standby and missed SCREEN_ON: a start
+        // with the panel already lit is the wake as far as this keeper can tell.
+        // Without this, a wake never opened a probe window and a dead adbd stayed dead
+        // while adb_enabled still read 1.
+        val awake = (app.getSystemService(Context.POWER_SERVICE) as? PowerManager)
+            ?.isInteractive == true
+        if (awake) {
+            screenOnAt = SystemClock.elapsedRealtime()
+            danced.set(false)
+        }
+        ensure(app)
         // The security centre may kill adbd without touching the flag, so look again during the
         // boot window instead of trusting the one check at start-up.
         longArrayOf(45_000L, 90_000L, 150_000L).forEach { delay ->

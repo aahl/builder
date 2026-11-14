@@ -88,6 +88,19 @@ object StudyLedger {
     fun countable(pkg: String?, exempt: Set<String>): Boolean =
         !pkg.isNullOrBlank() && pkg !in exempt
 
+    /**
+     * The app both detectors agree on. A window that is no longer in front still
+     * emits state changes (the video app behind the launcher does), so a lone
+     * opinion is not enough to interrupt a child: when the two disagree the gate
+     * stays shut and only the balance is charged.
+     */
+    fun agreed(a: String?, b: String?): String? = when {
+        a == null -> b
+        b == null -> a
+        a == b -> a
+        else -> null
+    }
+
     /** A fresh group, in random order, without repeating an item inside the group. */
     fun pick(bank: List<Question>, size: Int, random: Random = Random.Default): List<Question> {
         val usable = bank.filter { it.isValid() }

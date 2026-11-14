@@ -2,6 +2,7 @@ package cn.alone.hamitv.study
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.ZoneId
@@ -164,5 +165,15 @@ class StudyLedgerTest {
         )
         val group = StudyLedger.pick(bank, 5, Random(1))
         assertEquals(listOf("good"), group.map { it.id })
+    }
+
+    @Test
+    fun aSingleOpinionIsEnoughButADisagreementIsNot() {
+        assertEquals("com.cibn.tv", StudyLedger.agreed("com.cibn.tv", null))
+        assertEquals("com.cibn.tv", StudyLedger.agreed(null, "com.cibn.tv"))
+        assertEquals("com.cibn.tv", StudyLedger.agreed("com.cibn.tv", "com.cibn.tv"))
+        assertNull(StudyLedger.agreed("com.cibn.tv", "com.ts.launcher"))
+        assertNull(StudyLedger.agreed("com.ts.launcher", "com.cibn.tv"))
+        assertNull(StudyLedger.agreed(null, null))
     }
 }

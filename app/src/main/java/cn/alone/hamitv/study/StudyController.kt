@@ -55,6 +55,10 @@ class StudyController(
     private var relaunchBudgetStart = 0L
     private var relaunchCount = 0
 
+    /** The package the gate looks at, and when it became that package. */
+    private var stablePkg: String? = null
+    private var stableSince = 0L
+
     /** Set by the service so Home Assistant sees changes without polling. */
     @Volatile
     var onStateChanged: (() -> Unit)? = null
@@ -200,7 +204,7 @@ class StudyController(
         val screenOn = runCatching {
             (app.getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
         }.getOrDefault(true)
-        val pkg = StudyWatcherService.foregroundPackage ?: usage.current()
+        val pkg = foregroundNow()
         val active = screenOn && !StudyActivity.visible &&
             StudyLedger.countable(pkg, exemptPackages())
         val before = state
@@ -213,8 +217,32 @@ class StudyController(
         }
         publishIfChanged()
         guardWatcher()
-        maybeGate(pkg, now)
+        val gatePkg = gatePackage()
+        if (gatePkg != stablePkg) {
+            stablePkg = gatePkg
+            stableSince = now
+        }
+        maybeGate(gatePkg, now)
     }
+
+    /**
+     * What is actually in front. Usage stats are authoritative: a window that is
+     * no longer visible still emits state changes, and on this TV the video app
+     * keeps doing so while the child sits on the launcher, which used to charge
+     * time on the desktop and pop the quiz there. The watcher's package is the
+     * fallback for when usage stats are unavailable.
+     */
+    private fun foregroundNow(): String? =
+        usage.current() ?: StudyWatcherService.foregroundPackage
+
+    /**
+     * The package the quiz may interrupt. When both sources have an opinion they
+     * must agree: a disagreement means one of them is looking at a leftover
+     * window, and interrupting a child on the desktop because of that is worse
+     * than missing one gate (the balance still drops while they watch).
+     */
+    private fun gatePackage(): String? =
+        StudyLedger.agreed(usage.current(), StudyWatcherService.foregroundPackage)
 
     /**
      * A watcher that is bound but keeps reporting an app usage stats disagrees
@@ -224,8 +252,11 @@ class StudyController(
         if (!rules.enabled || !StudyWatcherService.connected) return
         val now = SystemClock.elapsedRealtime()
         if (now - lastRearmAt < REARM_COOLDOWN_MS) return
-        val watcherPkg = StudyWatcherService.foregroundPackage ?: return
+        // A watcher that disagrees while an exempt app (the launcher) is in front
+        // is just holding a leftover window event; only a real app matters.
         val usagePkg = usage.current() ?: return
+        if (!StudyLedger.countable(usagePkg, exemptPackages())) return
+        val watcherPkg = StudyWatcherService.foregroundPackage ?: return
         if (usagePkg == watcherPkg) return
         if (now - StudyWatcherService.lastEventAt < EVENT_STALE_MS) return
         lastRearmAt = now
@@ -246,6 +277,9 @@ class StudyController(
         if (StudyActivity.visible) return
         if (now - lastLaunchAt < LAUNCH_GAP_MS) return
         if (!StudyLedger.shouldGate(state, rules, pkg, exemptPackages())) return
+        // Only interrupt once the same app has held the front for a few seconds,
+        // so a brief hop through the launcher cannot open the quiz.
+        if (now - stableSince < GATE_SETTLE_MS) return
         if (!StudyWatcherService.connected) {
             Log.w(TAG, "quiz due but the watcher is not connected")
             return
@@ -369,7 +403,8 @@ class StudyController(
             "locked" to StudyLedger.isLocked(current, rules).toString(),
             "bank" to data.bank.size.toString(),
             "lastTickAgeSeconds" to if (current.lastTickMs <= 0) "-1" else ((nowMs - current.lastTickMs) / 1000).toString(),
-            "foreground" to (StudyWatcherService.foregroundPackage ?: usage.current() ?: "-"),
+            "foreground" to (foregroundNow() ?: "-"),
+            "watcherForeground" to (StudyWatcherService.foregroundPackage ?: "-"),
             "usageAccess" to usage.hasAccess().toString(),
             "quizVisible" to StudyActivity.visible.toString(),
             "running" to running.toString(),
@@ -389,6 +424,7 @@ class StudyController(
         const val TICK_MS = 15_000L
         const val SAVE_INTERVAL_MS = 30_000L
         const val LAUNCH_GAP_MS = 10_000L
+        const val GATE_SETTLE_MS = 4_000L
         const val RELAUNCH_GAP_MS = 900L
         const val RELAUNCH_DELAY_MS = 350L
         const val RELAUNCH_WINDOW_MS = 60_000L

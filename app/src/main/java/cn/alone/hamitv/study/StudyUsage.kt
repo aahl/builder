@@ -10,15 +10,17 @@ import android.os.SystemClock
 import kotlin.concurrent.thread
 
 /**
- * Foreground detection for when the accessibility service is not bound.
+ * The real foreground app, from usage stats.
  *
- * Usage stats need `appops set <pkg> GET_USAGE_STATS allow` once. The sample is
- * taken on a background thread and cached, because the ticker runs on the main
- * looper and querying every 15 s there would show up as jank on a TV.
+ * The accessibility stream cannot answer this: a window that is no longer in
+ * front still fires state changes, and on this TV the video app keeps doing so
+ * while the child sits on the launcher. Taking "last window event" as the
+ * foreground then charges time on the desktop and pops the quiz there.
  *
- * This only restores the *charging* half. Without the accessibility service the
- * quiz cannot be opened from the background, so the gate fails open: the balance
- * still drains, nothing interrupts the child.
+ * Usage stats need `appops set <pkg> GET_USAGE_STATS allow` once. Queries run on
+ * a background thread and only cover the window since the previous check, so a
+ * tick every couple of seconds stays cheap. The accessibility package is still
+ * used when usage stats are unavailable.
  */
 class StudyUsage(private val context: Context) {
 
@@ -26,12 +28,12 @@ class StudyUsage(private val context: Context) {
     private var cached: String? = null
 
     @Volatile
-    private var cachedAt = 0L
-
-    @Volatile
     private var querying = false
 
     private var lastQueryAt = 0L
+
+    /** Wall clock of the end of the last query window. */
+    private var cursor = 0L
 
     fun hasAccess(): Boolean = try {
         val ops = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
@@ -61,21 +63,26 @@ class StudyUsage(private val context: Context) {
             lastQueryAt = now
             querying = true
             thread(name = "study-usage", isDaemon = true) {
-                val pkg = query()
-                querying = false
-                if (pkg != null) {
-                    cached = pkg
-                    cachedAt = SystemClock.elapsedRealtime()
+                try {
+                    val pkg = query()
+                    if (pkg != null) cached = pkg
+                } finally {
+                    querying = false
                 }
             }
         }
-        return cached?.takeIf { SystemClock.elapsedRealtime() - cachedAt <= STALE_MS }
+        return cached
     }
 
     private fun query(): String? = runCatching {
         val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val now = System.currentTimeMillis()
-        val events = manager.queryEvents(now - EVENT_WINDOW_MS, now)
+        // Incremental: only the window since the last look. The first look after a
+        // start covers hours, because the app may have been open the whole time
+        // without a new foreground event.
+        val from = if (cursor > 0) cursor - 2_000 else now - INITIAL_LOOKBACK_MS
+        cursor = now
+        val events = manager.queryEvents(from, now)
         val event = UsageEvents.Event()
         var latest: String? = null
         var latestAt = 0L
@@ -89,8 +96,9 @@ class StudyUsage(private val context: Context) {
             }
         }
         if (latest != null) return@runCatching latest
-        // No event in the window (fresh boot, idle set): fall back to the most
-        // recently used app that was used recently enough to still be plausible.
+        if (cached != null) return@runCatching null
+        // Nothing in the window and nothing known yet (fresh boot, a set that logs
+        // no events): fall back to the most recently used app, if still plausible.
         manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, now - DAY_MS, now)
             ?.filter { it.lastTimeUsed > 0 && now - it.lastTimeUsed <= STALE_MS }
             ?.maxByOrNull { it.lastTimeUsed }
@@ -98,9 +106,9 @@ class StudyUsage(private val context: Context) {
     }.getOrNull()
 
     private companion object {
-        const val EVENT_WINDOW_MS = 15 * 60 * 1000L
+        const val INITIAL_LOOKBACK_MS = 6 * 60 * 60 * 1000L
         const val DAY_MS = 24 * 60 * 60 * 1000L
-        const val QUERY_MS = 15_000L
+        const val QUERY_MS = 2_000L
         const val STALE_MS = 10 * 60 * 1000L
     }
 }

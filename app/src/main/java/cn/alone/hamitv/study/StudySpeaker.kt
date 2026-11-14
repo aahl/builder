@@ -43,8 +43,16 @@ class StudySpeaker private constructor(context: Context) {
             .build()
     }
 
-    fun speak(text: String, voice: StudyVoice) {
-        if (!voice.enabled || text.isBlank()) return
+    /**
+     * Speak [text]; [onFinished] runs when playback ends, or straight away when
+     * there is nothing to say. Cancellation (a new question, leaving the page)
+     * does not call it, so callers do not advance behind the child's back.
+     */
+    fun speak(text: String, voice: StudyVoice, onFinished: (() -> Unit)? = null) {
+        if (!voice.enabled || text.isBlank()) {
+            onFinished?.invoke()
+            return
+        }
         stop()
         job = scope.launch {
             val bytes = try {
@@ -55,10 +63,11 @@ class StudySpeaker private constructor(context: Context) {
             } catch (e: Exception) {
                 lastError = e.message ?: e.javaClass.simpleName
                 Log.w(TAG, "cannot read the question", e)
+                onFinished?.invoke()
                 return@launch
             }
             lastError = null
-            play(bytes)
+            play(bytes, onFinished)
         }
     }
 
@@ -74,8 +83,11 @@ class StudySpeaker private constructor(context: Context) {
         release()
     }
 
-    private suspend fun play(bytes: ByteArray) {
-        if (bytes.isEmpty()) return
+    private suspend fun play(bytes: ByteArray, onFinished: (() -> Unit)? = null) {
+        if (bytes.isEmpty()) {
+            onFinished?.invoke()
+            return
+        }
         val file = File(app.cacheDir, "study_read.mp3")
         withContext(Dispatchers.IO) { runCatching { file.writeBytes(bytes) } }
 
@@ -83,10 +95,14 @@ class StudySpeaker private constructor(context: Context) {
         if (!requestFocus()) Log.w(TAG, "playing without audio focus")
         val mp = MediaPlayer()
         mp.setAudioAttributes(attributes())
-        mp.setOnCompletionListener { release() }
+        mp.setOnCompletionListener {
+            release()
+            onFinished?.invoke()
+        }
         mp.setOnErrorListener { _, what, extra ->
             lastError = "播放失败 $what/$extra"
             release()
+            onFinished?.invoke()
             true
         }
         try {
@@ -99,6 +115,7 @@ class StudySpeaker private constructor(context: Context) {
             Log.w(TAG, "cannot play the audio", e)
             runCatching { mp.release() }
             release()
+            onFinished?.invoke()
         }
     }
 
@@ -150,6 +167,12 @@ object StudySpeech {
             "${('A' + i)}，$option"
         }.joinToString("；")
         return "${normalize(question.q)}。选项：$options。"
+    }
+
+    /** A wrong answer: read the question again, then the right option. */
+    fun wrongAnswer(question: Question): String {
+        val answer = question.options.getOrNull(question.answer).orEmpty()
+        return "${normalize(question.q)}。答错了，正确答案是 $answer。"
     }
 
     private fun normalize(prompt: String): String = prompt

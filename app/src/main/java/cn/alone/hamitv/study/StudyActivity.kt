@@ -27,6 +27,7 @@ class StudyActivity : Activity() {
     private var index = 0
     private var correct = 0
     private var sessionGained = 0
+    private var advanceTask: Runnable? = null
     private var answered = false
     private var finished = false
     private val hatch = BackHatch()
@@ -48,6 +49,7 @@ class StudyActivity : Activity() {
     }
 
     private fun startGroup() {
+        cancelAdvance()
         group = study.pickGroup()
         index = 0
         correct = 0
@@ -100,7 +102,35 @@ class StudyActivity : Activity() {
 
         val rows = findViewById<LinearLayout>(R.id.studyOptions)
         for (i in 0 until rows.childCount) rows.getChildAt(i).isEnabled = false
-        rows.postDelayed({ advance() }, 1_000)
+
+        if (right) {
+            scheduleAdvance(RIGHT_DELAY_MS)
+        } else if (study.voice.enabled) {
+            // Read the question and the right answer, then move on when it ends.
+            // The long timer is only a fallback in case playback never reports back.
+            scheduleAdvance(WRONG_MAX_WAIT_MS)
+            speaker.speak(StudySpeech.wrongAnswer(question), study.voice) {
+                // The fallback may already have moved on while this was playing.
+                if (answered) scheduleAdvance(WRONG_AFTER_SPEECH_MS)
+            }
+        } else {
+            scheduleAdvance(WRONG_NO_VOICE_MS)
+        }
+    }
+
+    private fun scheduleAdvance(delayMs: Long) {
+        cancelAdvance()
+        val view = findViewById<LinearLayout>(R.id.studyOptions)
+        val task = Runnable {
+            if (!isFinishing && !finished) advance()
+        }
+        advanceTask = task
+        view.postDelayed(task, delayMs)
+    }
+
+    private fun cancelAdvance() {
+        advanceTask?.let { findViewById<LinearLayout>(R.id.studyOptions).removeCallbacks(it) }
+        advanceTask = null
     }
 
     private fun advance() {
@@ -164,11 +194,14 @@ class StudyActivity : Activity() {
     override fun onResume() {
         super.onResume()
         visible = true
+        // Came back in the middle of the correction: finish moving on.
+        if (answered && !finished) scheduleAdvance(800)
         Log.i(TAG, "quiz resumed")
     }
 
     override fun onPause() {
         visible = false
+        cancelAdvance()
         speaker.stop()
         // Leaving without passing (HOME, a system dialog) puts the quiz back.
         if (!finished) study.onQuizPaused()
@@ -185,6 +218,11 @@ class StudyActivity : Activity() {
     companion object {
         const val EXTRA_REASON = "reason"
         private const val TAG = "StudyActivity"
+
+        private const val RIGHT_DELAY_MS = 1_000L
+        private const val WRONG_AFTER_SPEECH_MS = 350L
+        private const val WRONG_MAX_WAIT_MS = 15_000L
+        private const val WRONG_NO_VOICE_MS = 2_500L
 
         @Volatile
         private var current: StudyActivity? = null

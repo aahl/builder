@@ -254,7 +254,7 @@ function renderStatus(data) {
     ["余额", minutes(s.balanceSec)],
     ["今日已用", minutes(s.usedTodaySec)],
     ["今日已得", minutes(s.earnedTodaySec)],
-    ["无障碍", d.watcherConnected === "true" ? "已连接" : (d.watcherEnabled === "true" ? "已启用但未连接" : "未开启")],
+    ["无障碍", d.watcherConnected === "true" ? "已连接" : (d.watcherEnabled === "true" ? "已启用但未连接" : "未开启（只计时，不弹题）")],
     ["当前前台", d.foreground || "—"],
     ["服务", d.running === "true" ? "运行中" : "未运行"],
   ].map(([k, v]) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`).join("");

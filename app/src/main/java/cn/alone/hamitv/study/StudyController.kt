@@ -19,6 +19,7 @@ class StudyController(
 
     private val app: Context = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
+    private val usage = StudyUsage(app)
 
     private var running = false
     private var lastSaveAt = 0L
@@ -80,6 +81,13 @@ class StudyController(
         if (running) return
         running = true
         handler.post(ticker)
+        // Firmwares drop the accessibility binding after an update while the
+        // setting still lists us; re-writing it makes the system bind again.
+        handler.postDelayed({
+            if (rules.enabled && !StudyWatcherService.connected) {
+                StudyWatcherService.ensureEnabled(app)
+            }
+        }, 8_000)
     }
 
     fun stop() {
@@ -150,7 +158,7 @@ class StudyController(
         val screenOn = runCatching {
             (app.getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
         }.getOrDefault(true)
-        val pkg = StudyWatcherService.foregroundPackage
+        val pkg = StudyWatcherService.foregroundPackage ?: usage.current()
         val active = screenOn && !StudyActivity.visible &&
             StudyLedger.countable(pkg, exemptPackages())
         val before = state
@@ -292,7 +300,8 @@ class StudyController(
             "locked" to StudyLedger.isLocked(current, rules).toString(),
             "bank" to data.bank.size.toString(),
             "lastTickAgeSeconds" to if (current.lastTickMs <= 0) "-1" else ((nowMs - current.lastTickMs) / 1000).toString(),
-            "foreground" to (StudyWatcherService.foregroundPackage ?: "-"),
+            "foreground" to (StudyWatcherService.foregroundPackage ?: usage.current() ?: "-"),
+            "usageAccess" to usage.hasAccess().toString(),
             "quizVisible" to StudyActivity.visible.toString(),
             "running" to running.toString(),
         )

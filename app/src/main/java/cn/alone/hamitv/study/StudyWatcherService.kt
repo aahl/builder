@@ -2,9 +2,11 @@ package cn.alone.hamitv.study
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityManager
@@ -78,6 +80,35 @@ class StudyWatcherService : AccessibilityService() {
         } catch (e: Exception) {
             Log.w(TAG, "cannot read the accessibility list", e)
             false
+        }
+
+        /**
+         * Firmwares drop the binding after an update or a force-stop while the
+         * setting still names us. Writing the list again (same entries, ourselves
+         * included) makes the system bind again. Needs WRITE_SECURE_SETTINGS; with
+         * no permission this is a no-op and the caller stays on the usage fallback.
+         */
+        fun ensureEnabled(context: Context): Boolean {
+            if (connected || enabled(context)) return true
+            return try {
+                val resolver = context.contentResolver
+                val current = Settings.Secure.getString(resolver, "enabled_accessibility_services").orEmpty()
+                val me = ComponentName(context, StudyWatcherService::class.java).flattenToString()
+                val entries = current.split(':').filter { it.isNotBlank() }.toMutableList()
+                if (me !in entries) entries.add(me)
+                Settings.Secure.putString(
+                    resolver,
+                    "enabled_accessibility_services",
+                    entries.joinToString(":"),
+                )
+                Settings.Secure.putInt(resolver, "accessibility_enabled", 1)
+                val ok = enabled(context)
+                Log.i(TAG, "re-armed the watcher: $ok")
+                ok
+            } catch (e: Exception) {
+                Log.w(TAG, "cannot re-enable the watcher", e)
+                false
+            }
         }
 
         /** Bring the quiz page up. Returns false when the service is not connected. */

@@ -43,7 +43,7 @@ export default function DetailScreen() {
     try {
       const [record, reversed] = await Promise.all([
         PlayRecordManager.get(detail.source, detail.id.toString()),
-        EpisodeOrderManager.get(detail.source, detail.id.toString()),
+        EpisodeOrderManager.get(detail.title),
       ]);
       setLastWatchedIndex(record && record.index > 0 ? record.index - 1 : null);
       setIsReversed(reversed);
@@ -57,7 +57,7 @@ export default function DetailScreen() {
     const next = !isReversed;
     setIsReversed(next);
     if (detail) {
-      EpisodeOrderManager.save(detail.source, detail.id.toString(), next).catch((error) =>
+      EpisodeOrderManager.save(detail.title, next).catch((error) =>
         console.info("Failed to save episode order:", error)
       );
     }

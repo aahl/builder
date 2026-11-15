@@ -94,14 +94,15 @@ export class EpisodeOrderManager {
     }
   }
 
-  static async get(source: string, id: string): Promise<boolean> {
+  // 以剧名（title）为 key：同一部剧在不同播放源之间共享排序偏好
+  static async get(title: string): Promise<boolean> {
     const allSettings = await this.getAll();
-    return allSettings[generateKey(source, id)] === true;
+    return allSettings[title] === true;
   }
 
-  static async save(source: string, id: string, reversed: boolean): Promise<void> {
+  static async save(title: string, reversed: boolean): Promise<void> {
     const allSettings = await this.getAll();
-    const key = generateKey(source, id);
+    const key = title;
     if (reversed) {
       allSettings[key] = true;
     } else {

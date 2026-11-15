@@ -245,12 +245,14 @@ class EspServer(
         val used = (state.usedTodaySec / 60).toInt()
         val earned = (state.earnedTodaySec / 60).toInt()
         val dailyLeft = (rules.dailyCapMin - used).coerceAtLeast(0)
+        val quiet = controller.quietMinutes()
         val text = when {
             !rules.enabled -> "未开启"
             // Say so instead of looking like a well-behaved child: without the
             // watcher there is no foreground package and nothing is charged.
             !StudyWatcherService.enabled(context) -> "无障碍未开启"
             state.paused -> "已暂停"
+            StudyLedger.isLocked(state, rules) && quiet > 0 -> "冷却 $quiet 分钟"
             StudyLedger.isLocked(state, rules) -> "需要答题"
             else -> "剩余 $left 分钟"
         }

@@ -527,6 +527,7 @@ class ConfigServer(
             state = controller.snapshot(now),
             balanceMinutes = controller.balanceMinutes(now),
             locked = controller.isLocked(now),
+            quietMinutes = controller.quietMinutes(now),
             bankSize = controller.bankSize,
             voice = controller.voice,
             voices = StudyVoices.all.map { StudyVoiceOption(it.id, it.label) },
@@ -669,6 +670,8 @@ data class StudyPayload(
     val state: StudyState = StudyState(),
     val balanceMinutes: Int = 0,
     val locked: Boolean = false,
+    /** Minutes the quiz is still held back after the last group or parent exit. */
+    val quietMinutes: Int = 0,
     val bankSize: Int = 0,
     val voice: StudyVoice = StudyVoice(),
     val voices: List<StudyVoiceOption> = emptyList(),

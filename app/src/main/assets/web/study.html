@@ -98,6 +98,8 @@
         <div><label for="dailyCap">每日上限（分钟）</label><input id="dailyCap" type="number" min="1" max="1440"></div>
         <div><label for="perCorrect">每题答对（分钟）</label><input id="perCorrect" type="number" min="1" max="60"></div>
         <div><label for="groupSize">每次出几题</label><input id="groupSize" type="number" min="1" max="20"></div>
+        <div><label for="quiet">答完一组后冷却（分钟）</label><input id="quiet" type="number" min="0" max="240"></div>
+        <div><label for="exitQuiet">密码退出后冷却（分钟）</label><input id="exitQuiet" type="number" min="0" max="1440"></div>
         <div><label for="exitPin">退出密码（1上 2下 3左 4右）</label><input id="exitPin" inputmode="numeric" maxlength="8" placeholder="1234"></div>
       </div>
       <label for="exempt">额外豁免的应用包名（每行一个）</label>
@@ -247,7 +249,8 @@ function renderStatus(data) {
   const s = data.state;
   const d = data.diagnostics || {};
   const locked = data.locked;
-  const gate = locked ? "已锁定，需要答题" : (s.paused ? "已暂停" : "正常");
+  const quiet = data.quietMinutes || 0;
+  const gate = quiet > 0 && locked ? `冷却中，${quiet} 分钟后再出题` : (locked ? "已锁定，需要答题" : (s.paused ? "已暂停" : "正常"));
   const mismatch = d.watcherForeground && d.watcherForeground !== d.foreground;
   $("status").innerHTML = [
     ["管控", d.enabled === "true" ? "已开启" : "未开启"],
@@ -271,6 +274,8 @@ function renderRules(rules, force) {
   $("dailyCap").value = rules.dailyCapMin;
   $("perCorrect").value = rules.perCorrectMin;
   $("groupSize").value = rules.groupSize;
+  $("quiet").value = rules.quietMin;
+  $("exitQuiet").value = rules.exitQuietMin;
   $("exitPin").value = rules.exitPin;
   $("exempt").value = (rules.exempt || []).join("\n");
 }
@@ -418,6 +423,8 @@ $("saveRules").onclick = async () => {
     dailyCapMin: Number($("dailyCap").value) || 60,
     perCorrectMin: Number($("perCorrect").value) || 2,
     groupSize: Number($("groupSize").value) || 5,
+    quietMin: Number($("quiet").value) || 0,
+    exitQuietMin: Number($("exitQuiet").value) || 0,
     exitPin: $("exitPin").value.trim() || "1234",
     exempt: $("exempt").value.split("\n").map((line) => line.trim()).filter(Boolean),
   };
@@ -432,7 +439,7 @@ $("saveRules").onclick = async () => {
   }
 };
 
-["enabled", "dailyCap", "perCorrect", "groupSize", "exitPin", "exempt"].forEach((id) => {
+["enabled", "dailyCap", "perCorrect", "groupSize", "quiet", "exitQuiet", "exitPin", "exempt"].forEach((id) => {
   const field = $(id);
   field.addEventListener("input", markRulesDirty);
   field.addEventListener("change", markRulesDirty);

@@ -55,8 +55,26 @@ object StudyLedger {
         rules.enabled && !state.paused &&
             (state.balanceSec <= 0 || state.usedTodaySec >= rules.dailyCapMin * 60L)
 
-    fun shouldGate(state: StudyState, rules: StudyRules, pkg: String?, exempt: Set<String>): Boolean =
-        isLocked(state, rules) && countable(pkg, exempt)
+    fun shouldGate(
+        state: StudyState,
+        rules: StudyRules,
+        pkg: String?,
+        exempt: Set<String>,
+        nowMs: Long,
+    ): Boolean = quietLeftSec(state, nowMs) == 0L && isLocked(state, rules) && countable(pkg, exempt)
+
+    /** Seconds left of the period in which the quiz must not interrupt. */
+    fun quietLeftSec(state: StudyState, nowMs: Long): Long =
+        ((state.quietUntilMs - nowMs) / 1000).coerceAtLeast(0)
+
+    /**
+     * Hold the quiz back for a while. [maxOf] means a group that ends right
+     * after a parent exit cannot shorten the longer parent cooldown.
+     */
+    fun quieten(state: StudyState, minutes: Int, nowMs: Long): StudyState {
+        if (minutes <= 0) return state
+        return state.copy(quietUntilMs = maxOf(state.quietUntilMs, nowMs + minutes * 60_000L))
+    }
 
     /** Time left that can still be earned today; the daily cap is shared by watching and unlocking. */
     fun earnableSec(state: StudyState, rules: StudyRules): Long =

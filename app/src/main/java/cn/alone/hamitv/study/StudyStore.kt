@@ -62,6 +62,7 @@ class StudyStore(private val context: Context) {
         earnedTodaySec = prefs.getLong(KEY_EARNED, 0),
         paused = prefs.getBoolean(KEY_PAUSED, false),
         lastTickMs = prefs.getLong(KEY_LAST_TICK, 0),
+        quietUntilMs = prefs.getLong(KEY_QUIET_UNTIL, 0),
     )
 
     fun saveState(state: StudyState) {
@@ -72,6 +73,7 @@ class StudyStore(private val context: Context) {
             .putLong(KEY_EARNED, state.earnedTodaySec)
             .putBoolean(KEY_PAUSED, state.paused)
             .putLong(KEY_LAST_TICK, state.lastTickMs)
+            .putLong(KEY_QUIET_UNTIL, state.quietUntilMs)
             .apply()
     }
 
@@ -90,6 +92,7 @@ class StudyStore(private val context: Context) {
         const val KEY_EARNED = "earned_sec"
         const val KEY_PAUSED = "paused"
         const val KEY_LAST_TICK = "last_tick_ms"
+        const val KEY_QUIET_UNTIL = "quiet_until_ms"
         const val KEY_LAST_RESULT = "last_result"
     }
 }

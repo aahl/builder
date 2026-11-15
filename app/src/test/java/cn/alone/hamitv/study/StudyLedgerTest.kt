@@ -122,10 +122,34 @@ class StudyLedgerTest {
     @Test
     fun gateOnlyAppliesToCountableApps() {
         val empty = state(balanceSec = 0)
-        assertTrue(StudyLedger.shouldGate(empty, rules, "com.example.video", setOf("com.ts.launcher")))
-        assertFalse(StudyLedger.shouldGate(empty, rules, "com.ts.launcher", setOf("com.ts.launcher")))
-        assertFalse(StudyLedger.shouldGate(empty, rules, null, setOf("com.ts.launcher")))
+        val now = at(2026, 11, 13, 9, 0)
+        assertTrue(StudyLedger.shouldGate(empty, rules, "com.example.video", setOf("com.ts.launcher"), now))
+        assertFalse(StudyLedger.shouldGate(empty, rules, "com.ts.launcher", setOf("com.ts.launcher"), now))
+        assertFalse(StudyLedger.shouldGate(empty, rules, null, setOf("com.ts.launcher"), now))
         assertFalse(StudyLedger.countable("", emptySet()))
+    }
+
+    @Test
+    fun quietHoldsTheGateBackEvenWhenTheBalanceIsGone() {
+        val now = at(2026, 11, 13, 9, 0)
+        val quiet = StudyLedger.quieten(state(balanceSec = 0), 5, now)
+        assertEquals(300L, StudyLedger.quietLeftSec(quiet, now))
+        assertFalse(StudyLedger.shouldGate(quiet, rules, "com.example.video", emptySet(), now + 4 * 60_000))
+        // The balance still drains while the parent-granted cooldown runs.
+        val later = StudyLedger.step(quiet, now + 4 * 60_000, active = true, rules = rules, zone = zone)
+        assertEquals(0L, later.balanceSec)
+        assertEquals(60L, later.usedTodaySec)
+        // Then the quiz comes back.
+        assertTrue(StudyLedger.shouldGate(quiet, rules, "com.example.video", emptySet(), now + 5 * 60_000))
+    }
+
+    @Test
+    fun aShorterCooldownCannotCutAParentCooldownShort() {
+        val now = at(2026, 11, 13, 9, 0)
+        val exited = StudyLedger.quieten(state(), 60, now)
+        val afterGroup = StudyLedger.quieten(exited, 5, now + 60_000)
+        assertEquals(now + 60 * 60_000, afterGroup.quietUntilMs)
+        assertEquals(exited, StudyLedger.quieten(exited, 0, now + 120_000))
     }
 
     @Test

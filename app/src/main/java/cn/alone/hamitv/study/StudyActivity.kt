@@ -264,7 +264,7 @@ class StudyActivity : Activity() {
 
     private fun abandon() {
         finished = true
-        study.onQuizFinished()
+        study.onQuizAbandoned()
         speaker.stop()
         finish()
     }
@@ -311,7 +311,9 @@ class StudyActivity : Activity() {
             val activity = current ?: return
             activity.runOnUiThread {
                 activity.finished = true
-                activity.study.onQuizFinished()
+                // The gate is being switched off; leaving a cooldown behind would
+                // carry into the next time it is switched on.
+                activity.study.onQuizFinished(0)
                 if (!activity.isFinishing) activity.finish()
             }
         }

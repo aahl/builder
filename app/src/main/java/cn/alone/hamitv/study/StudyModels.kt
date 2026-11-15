@@ -33,11 +33,21 @@ data class StudyRules(
     val exempt: List<String> = emptyList(),
     /** Parent gate on the quiz page: digits 1=up, 2=down, 3=left, 4=right. */
     val exitPin: String = "1234",
+    /**
+     * How long the quiz stays away after a finished group. Without it a group
+     * that earned little (or hit the daily cap) is followed by another one
+     * seconds later.
+     */
+    val quietMin: Int = 5,
+    /** How long the quiz stays away after the parent exits with the password. */
+    val exitQuietMin: Int = 60,
 ) {
     fun sanitized(): StudyRules = copy(
         dailyCapMin = dailyCapMin.coerceIn(1, 24 * 60),
         perCorrectMin = perCorrectMin.coerceIn(1, 60),
         groupSize = groupSize.coerceIn(1, 20),
+        quietMin = quietMin.coerceIn(0, 4 * 60),
+        exitQuietMin = exitQuietMin.coerceIn(0, 24 * 60),
         exempt = exempt.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(30),
         exitPin = exitPin.filter { it in '1'..'4' }
             .take(8)
@@ -59,6 +69,12 @@ data class StudyState(
     val earnedTodaySec: Long = 0,
     val paused: Boolean = false,
     val lastTickMs: Long = 0,
+    /**
+     * Wall-clock time before which no quiz may open again. Set when a group
+     * ends and when the parent leaves through the password gate; watching still
+     * spends the balance while it lasts, only the interruption is held back.
+     */
+    val quietUntilMs: Long = 0,
 )
 
 /**

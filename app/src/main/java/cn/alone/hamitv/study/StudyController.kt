@@ -106,6 +106,12 @@ class StudyController(
     fun balanceMinutes(nowMs: Long = System.currentTimeMillis()): Int =
         (roll(nowMs).balanceSec / 60).toInt()
 
+    /** Whole minutes left of the post-quiz cooldown, rounded up, for the console and HA. */
+    fun quietMinutes(nowMs: Long = System.currentTimeMillis()): Int {
+        val left = StudyLedger.quietLeftSec(roll(nowMs), nowMs)
+        return if (left <= 0) 0 else ((left + 59) / 60).toInt()
+    }
+
     fun pickGroup(size: Int = rules.groupSize): List<Question> = StudyLedger.pick(data.bank, size)
 
     /** Called by the agent service once its foreground notification is up. */
@@ -164,9 +170,27 @@ class StudyController(
         relaunchBudgetStart = 0
     }
 
-    /** Passed or abandoned: stop holding the screen. */
-    fun onQuizFinished() {
+    /**
+     * The page closed after a group or was switched off. [quietMin] keeps the
+     * quiz away for a while so a group that earned little is not immediately
+     * followed by the next one; pass 0 when the gate itself was disabled.
+     */
+    @Synchronized
+    fun onQuizFinished(quietMin: Int = rules.quietMin) {
         quizSession = false
+        if (quietMin <= 0) return
+        state = StudyLedger.quieten(state, quietMin, System.currentTimeMillis())
+        store.saveState(state)
+        publishIfChanged()
+    }
+
+    /**
+     * The parent left through the password gate: the balance is still empty, so
+     * without a longer cooldown the next tick would put the quiz straight back.
+     */
+    @Synchronized
+    fun onQuizAbandoned() {
+        onQuizFinished(rules.exitQuietMin)
     }
 
     /** The page went to the background without finishing; this is usually HOME. */
@@ -273,7 +297,8 @@ class StudyController(
     /** Push to HA only when something HA can see actually changed. */
     private fun publishIfChanged() {
         val key = "${state.balanceSec / 60}|${state.usedTodaySec / 60}|${state.earnedTodaySec / 60}|" +
-            "${state.paused}|${StudyLedger.isLocked(state, rules)}|${rules.enabled}|$lastResult"
+            "${state.paused}|${StudyLedger.isLocked(state, rules)}|${rules.enabled}|$lastResult|" +
+            StudyLedger.quietLeftSec(state, System.currentTimeMillis()) / 60
         if (key == lastPublished) return
         lastPublished = key
         onStateChanged?.invoke()
@@ -282,7 +307,7 @@ class StudyController(
     private fun maybeGate(pkg: String?, now: Long) {
         if (StudyActivity.visible) return
         if (now - lastLaunchAt < LAUNCH_GAP_MS) return
-        if (!StudyLedger.shouldGate(state, rules, pkg, exemptPackages())) return
+        if (!StudyLedger.shouldGate(state, rules, pkg, exemptPackages(), now)) return
         // Only interrupt once the same app has held the front for a few seconds,
         // so a brief hop through the launcher cannot open the quiz.
         if (now - stableSince < GATE_SETTLE_MS) return
@@ -413,6 +438,7 @@ class StudyController(
             "enabled" to rules.enabled.toString(),
             "paused" to current.paused.toString(),
             "locked" to StudyLedger.isLocked(current, rules).toString(),
+            "quietLeftSeconds" to StudyLedger.quietLeftSec(current, nowMs).toString(),
             "bank" to data.bank.size.toString(),
             "lastTickAgeSeconds" to if (current.lastTickMs <= 0) "-1" else ((nowMs - current.lastTickMs) / 1000).toString(),
             "foreground" to (foregroundNow() ?: "-"),

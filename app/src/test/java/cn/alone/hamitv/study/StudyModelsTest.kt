@@ -45,6 +45,16 @@ class StudyModelsTest {
     }
 
     @Test
+    fun cooldownsAreClampedAndDefaultToFiveAndSixtyMinutes() {
+        val defaults = StudyRules()
+        assertEquals(5, defaults.quietMin)
+        assertEquals(60, defaults.exitQuietMin)
+        val clamped = StudyRules(quietMin = -3, exitQuietMin = 9999).sanitized()
+        assertEquals(0, clamped.quietMin)
+        assertEquals(1440, clamped.exitQuietMin)
+    }
+
+    @Test
     fun rejectsQuestionsThatCannotBeAnswered() {
         assertTrue(Question(id = "q", q = "q", options = listOf("a", "b"), answer = 1).isValid())
         assertFalse(Question(id = "", q = "q", options = listOf("a", "b"), answer = 0).isValid())

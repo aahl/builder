@@ -15,6 +15,7 @@ interface SettingsState {
     };
   };
   isModalVisible: boolean;
+  settingsLoaded: boolean;
   serverConfig: ServerConfig | null;
   loadSettings: () => Promise<void>;
   fetchServerConfig: () => Promise<void>;
@@ -35,24 +36,32 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   remoteInputEnabled: false,
   adFilterEnabled: true,
   isModalVisible: false,
+  settingsLoaded: false,
   serverConfig: null,
   videoSource: {
     enabledAll: true,
     sources: {},
   },
   loadSettings: async () => {
-    const settings = await SettingsManager.get();
-    set({
-      apiBaseUrl: settings.apiBaseUrl,
-      m3uUrl: settings.m3uUrl,
-      remoteInputEnabled: settings.remoteInputEnabled || false,
-      adFilterEnabled: settings.adFilterEnabled !== false,
-      videoSource: settings.videoSource || {
-        enabledAll: true,
-        sources: {},
-      },
-    });
-    api.setBaseUrl(settings.apiBaseUrl);
+    try {
+      const settings = await SettingsManager.get();
+      set({
+        apiBaseUrl: settings.apiBaseUrl,
+        m3uUrl: settings.m3uUrl,
+        remoteInputEnabled: settings.remoteInputEnabled || false,
+        adFilterEnabled: settings.adFilterEnabled !== false,
+        videoSource: settings.videoSource || {
+          enabledAll: true,
+          sources: {},
+        },
+      });
+      api.setBaseUrl(settings.apiBaseUrl);
+    } catch (error) {
+      console.info("Failed to load settings:", error);
+    } finally {
+      // 无论成功失败都要放行首屏，避免卡在启动态
+      set({ settingsLoaded: true });
+    }
     await get().fetchServerConfig();
   },
   fetchServerConfig: async () => {

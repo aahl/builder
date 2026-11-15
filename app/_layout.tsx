@@ -20,7 +20,7 @@ export default function RootLayout() {
   const [loaded, error] = useFonts({
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
   });
-  const { loadSettings, remoteInputEnabled, apiBaseUrl, adFilterEnabled } = useSettingsStore();
+  const { loadSettings, remoteInputEnabled, apiBaseUrl, adFilterEnabled, settingsLoaded } = useSettingsStore();
   const { startServer, stopServer } = useRemoteControlStore();
   const { checkLoginStatus } = useAuthStore();
 
@@ -35,13 +35,13 @@ export default function RootLayout() {
   }, [apiBaseUrl, checkLoginStatus]);
 
   useEffect(() => {
-    if (loaded || error) {
+    if ((loaded || error) && settingsLoaded) {
       SplashScreen.hideAsync();
       if (error) {
         console.warn(`Error in loading fonts: ${error}`);
       }
     }
-  }, [loaded, error]);
+  }, [loaded, error, settingsLoaded]);
 
   useEffect(() => {
     if (remoteInputEnabled) {
@@ -60,7 +60,8 @@ export default function RootLayout() {
     }
   }, [adFilterEnabled]);
 
-  if (!loaded && !error) {
+  // 等字体和设置（apiBaseUrl）就绪再挂载页面，避免首页在 api 地址为空时抢先请求
+  if ((!loaded && !error) || !settingsLoaded) {
     return null;
   }
 

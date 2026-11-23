@@ -257,6 +257,166 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(readStatus())
 }
 
+type deviceMatch struct {
+	SerialNumber string `json:"serial_number"`
+	Mac          string `json:"mac"`
+}
+
+type publicConfig struct {
+	Configured    bool   `json:"configured"`
+	Account       string `json:"account"`
+	SerialNumber  string `json:"serial_number"`
+	Mac           string `json:"mac"`
+	DNS           string `json:"dns"`
+	Bot           string `json:"bot"`
+	OpenAIBackend string `json:"openai_backend"`
+	Prompt        string `json:"prompt"`
+	ContextMode   string `json:"context_mode"`
+	ContextTurns  int    `json:"context_turns"`
+	ContextTTLSec int    `json:"context_ttl_sec"`
+	ThinkingMode  string `json:"thinking_mode"`
+}
+
+func loadDeviceMatch() deviceMatch {
+	var dm deviceMatch
+	if data, err := os.ReadFile(devicePath); err == nil {
+		_ = json.Unmarshal(data, &dm)
+	}
+	return dm
+}
+
+func loadDNS() string {
+	data, err := os.ReadFile(filepath.Join(appDir, "dns-server.txt"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func buildPublicConfig(cfg *xiaobot.Config, dm deviceMatch, dns string) publicConfig {
+	out := publicConfig{
+		SerialNumber:  dm.SerialNumber,
+		Mac:           dm.Mac,
+		DNS:           dns,
+		Bot:           "deepseek-flash",
+		OpenAIBackend: "https://api.deepseek.com",
+		ContextMode:   "session",
+		ContextTurns:  20,
+		ThinkingMode:  "off",
+	}
+	if cfg == nil {
+		return out
+	}
+	out.Configured = true
+	out.Account = cfg.Account
+	out.Bot = cfg.Bot
+	out.OpenAIBackend = cfg.OpenAIBackend
+	out.Prompt = cfg.Prompt
+	out.ContextMode = cfg.ContextMode
+	out.ContextTurns = cfg.ContextTurns
+	out.ContextTTLSec = cfg.ContextTTLSec
+	out.ThinkingMode = cfg.ThinkingMode
+	return out
+}
+
+func handleConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, _ := xiaobot.NewConfigFromFile(cfgPath)
+	out := buildPublicConfig(cfg, loadDeviceMatch(), loadDNS())
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(out)
+}
+
+func validateRuntime(mode string, turns, ttl int, thinking string) (string, int, int, string, error) {
+	switch mode {
+	case "":
+		mode = "session"
+	case "off", "session", "speaker":
+	default:
+		return "", 0, 0, "", fmt.Errorf("上下文模式无效")
+	}
+	if turns == 0 {
+		turns = 20
+	}
+	if turns < 1 || turns > 200 {
+		return "", 0, 0, "", fmt.Errorf("保留轮数必须在 1–200 之间")
+	}
+	if ttl < 0 || ttl > 1800 {
+		return "", 0, 0, "", fmt.Errorf("空闲超时必须在 0–1800 秒之间")
+	}
+	switch thinking {
+	case "":
+		thinking = "off"
+	case "off", "low", "high", "max":
+	default:
+		return "", 0, 0, "", fmt.Errorf("思考模式无效")
+	}
+	return mode, turns, ttl, thinking, nil
+}
+
+type runtimeInput struct {
+	ContextMode   string `json:"context_mode"`
+	ContextTurns  int    `json:"context_turns"`
+	ContextTTLSec int    `json:"context_ttl_sec"`
+	ThinkingMode  string `json:"thinking_mode"`
+}
+
+func applyRuntime(cfg *xiaobot.Config, in runtimeInput) (xiaobot.Config, error) {
+	if cfg == nil {
+		return xiaobot.Config{}, fmt.Errorf("尚未完成账号配置")
+	}
+	mode, turns, ttl, thinking, err := validateRuntime(in.ContextMode, in.ContextTurns, in.ContextTTLSec, in.ThinkingMode)
+	if err != nil {
+		return xiaobot.Config{}, err
+	}
+	out := *cfg
+	out.ContextMode = mode
+	out.ContextTurns = turns
+	out.ContextTTLSec = ttl
+	out.ThinkingMode = thinking
+	out.Normalize()
+	return out, nil
+}
+
+func handleRuntime(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var in runtimeInput
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	mu.Lock()
+	busy := running
+	mu.Unlock()
+	if busy {
+		http.Error(w, "已有配置流程正在运行", http.StatusConflict)
+		return
+	}
+	var existing *xiaobot.Config
+	if current, err := xiaobot.NewConfigFromFile(cfgPath); err == nil {
+		existing = current
+	}
+	cfg, err := applyRuntime(existing, in)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	data, _ := json.MarshalIndent(cfg, "", "  ")
+	if err := atomicWrite(cfgPath, append(data, '\n'), 0600); err != nil {
+		http.Error(w, "配置写入失败", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "saved", "restart_required": true})
+}
+
 func handleSetup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -279,33 +439,12 @@ func handleSetup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "DNS 必须是 IP:端口，例如 192.168.1.1:53", http.StatusBadRequest)
 		return
 	}
-	switch in.ContextMode {
-	case "":
-		in.ContextMode = "session"
-	case "off", "session", "speaker":
-	default:
-		http.Error(w, "上下文模式无效", http.StatusBadRequest)
+	mode, turns, ttl, thinking, err := validateRuntime(in.ContextMode, in.ContextTurns, in.ContextTTLSec, in.ThinkingMode)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if in.ContextTurns == 0 {
-		in.ContextTurns = 20
-	}
-	if in.ContextTurns < 1 || in.ContextTurns > 200 {
-		http.Error(w, "保留轮数必须在 1–200 之间", http.StatusBadRequest)
-		return
-	}
-	if in.ContextTTLSec < 0 || in.ContextTTLSec > 1800 {
-		http.Error(w, "空闲超时必须在 0–1800 秒之间", http.StatusBadRequest)
-		return
-	}
-	switch in.ThinkingMode {
-	case "":
-		in.ThinkingMode = "off"
-	case "off", "low", "high", "max":
-	default:
-		http.Error(w, "思考模式无效", http.StatusBadRequest)
-		return
-	}
+	in.ContextMode, in.ContextTurns, in.ContextTTLSec, in.ThinkingMode = mode, turns, ttl, thinking
 
 	mu.Lock()
 	if running {
@@ -433,6 +572,8 @@ func router() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", withAuth(handlePage))
 	mux.HandleFunc("/api/status", withAuth(handleStatus))
+	mux.HandleFunc("/api/config", withAuth(handleConfig))
+	mux.HandleFunc("/api/runtime", withAuth(handleRuntime))
 	mux.HandleFunc("/api/setup", withAuth(handleSetup))
 	mux.HandleFunc("/api/otp", withAuth(handleOTP))
 	return mux

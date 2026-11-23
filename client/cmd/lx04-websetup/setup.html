@@ -104,6 +104,7 @@
     <label class="check"><input type="checkbox" id="speak" checked> 完成后发送一句测试播报</label>
 
     <button type="submit" id="submit">保存并登录</button>
+    <button type="button" id="save_runtime" style="background:#059669">仅保存运行参数（不重新登录）</button>
   </form>
 
   <div class="otp" id="otpbox">
@@ -174,6 +175,42 @@ function syncContext() {
 $('context_mode').addEventListener('change', syncContext);
 syncContext();
 
+async function loadConfig() {
+  try {
+    const c = await api('/api/config');
+    if (c.account) $('account').value = c.account;
+    if (c.serial_number) $('serial_number').value = c.serial_number;
+    if (c.mac) $('mac').value = c.mac;
+    if (c.dns) $('dns').value = c.dns;
+    if (c.bot) $('bot').value = c.bot;
+    if (c.openai_backend) $('openai_backend').value = c.openai_backend;
+    if (c.prompt) $('prompt').value = c.prompt;
+    if (c.context_mode) $('context_mode').value = c.context_mode;
+    if (c.context_turns) $('context_turns').value = c.context_turns;
+    if (c.context_ttl_sec !== undefined) $('context_ttl_sec').value = c.context_ttl_sec;
+    if (c.thinking_mode) $('thinking_mode').value = c.thinking_mode;
+    syncContext();
+  } catch (e) {
+    // A missing config must not block the initial setup form.
+  }
+}
+
+$('save_runtime').addEventListener('click', async () => {
+  $('save_runtime').disabled = true;
+  try {
+    await api('/api/runtime', {
+      context_mode: $('context_mode').value,
+      context_turns: parseInt($('context_turns').value, 10) || 20,
+      context_ttl_sec: parseInt($('context_ttl_sec').value, 10) || 0,
+      thinking_mode: $('thinking_mode').value
+    });
+    showStatus('运行参数已保存；重启 agent 后生效。', 'ok');
+  } catch (e) {
+    showStatus('保存失败：' + e.message, 'err');
+  }
+  $('save_runtime').disabled = false;
+});
+
 $('f').addEventListener('submit', async e => {
   e.preventDefault();
   const v = id => $(id).value.trim();
@@ -215,6 +252,7 @@ $('otpsubmit').addEventListener('click', async () => {
   }
 });
 
+loadConfig();
 pollOnce();
 </script>
 </body>

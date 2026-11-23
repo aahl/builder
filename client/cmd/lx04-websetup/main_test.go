@@ -128,3 +128,67 @@ func fsReadPage() (string, error) {
 	b, err := page.ReadFile("setup.html")
 	return string(b), err
 }
+
+func TestBuildPublicConfigOmitsSecrets(t *testing.T) {
+	cfg := &xiaobot.Config{
+		Account:       "acc",
+		Password:      "secret-pass",
+		OpenAIKey:     "secret-key",
+		Bot:           "deepseek-flash",
+		ContextMode:   "session",
+		ContextTurns:  20,
+		ContextTTLSec: 0,
+		ThinkingMode:  "off",
+	}
+	out := buildPublicConfig(cfg, deviceMatch{SerialNumber: "sn", Mac: "mac"}, "1.1.1.1:53")
+	data, _ := json.Marshal(out)
+	body := string(data)
+	if strings.Contains(body, "secret-pass") || strings.Contains(body, "secret-key") {
+		t.Fatal("public config leaked a secret")
+	}
+	if !out.Configured || out.SerialNumber != "sn" || out.DNS != "1.1.1.1:53" {
+		t.Fatalf("bad public config: %+v", out)
+	}
+}
+
+func TestValidateRuntime(t *testing.T) {
+	if _, turns, _, _, err := validateRuntime("", 0, 0, ""); err != nil || turns != 20 {
+		t.Fatalf("defaults rejected: %v turns=%d", err, turns)
+	}
+	for _, tc := range []struct {
+		mode   string
+		turns  int
+		ttl    int
+		think  string
+		failed bool
+	}{
+		{"bogus", 20, 0, "off", true},
+		{"session", 201, 0, "off", true},
+		{"session", 20, -1, "off", true},
+		{"session", 20, 1801, "off", true},
+		{"session", 20, 0, "bogus", true},
+		{"speaker", 1, 1800, "max", false},
+	} {
+		_, _, _, _, err := validateRuntime(tc.mode, tc.turns, tc.ttl, tc.think)
+		if (err != nil) != tc.failed {
+			t.Fatalf("validateRuntime(%+v) = %v", tc, err)
+		}
+	}
+}
+
+func TestApplyRuntimePreservesFields(t *testing.T) {
+	existing := &xiaobot.Config{Account: "a", Password: "p", Bot: "m", ContextMode: "off", ContextTurns: 5, ThinkingMode: "off"}
+	got, err := applyRuntime(existing, runtimeInput{ContextMode: "session", ContextTurns: 30, ContextTTLSec: 60, ThinkingMode: "high"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Account != "a" || got.Password != "p" || got.Bot != "m" {
+		t.Fatalf("existing fields lost: %+v", got)
+	}
+	if got.ContextMode != "session" || got.ContextTurns != 30 || got.ContextTTLSec != 60 || got.ThinkingMode != "high" {
+		t.Fatalf("runtime fields not applied: %+v", got)
+	}
+	if _, err := applyRuntime(nil, runtimeInput{}); err == nil {
+		t.Fatal("missing config accepted")
+	}
+}

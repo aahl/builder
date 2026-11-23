@@ -12,7 +12,7 @@
   h1 { font-size:20px; margin:0 0 4px; }
   .sub { color:var(--muted); font-size:13px; margin:0 0 20px; line-height:1.6; }
   label { display:block; font-size:13px; font-weight:600; margin:14px 0 6px; }
-  input[type=text], input[type=password] { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px; }
+  input[type=text], input[type=password], input[type=number], select { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px; background:#fff; }
   input:focus { outline:2px solid rgba(37,99,235,.4); border-color:var(--accent); }
   .row { display:flex; gap:12px; }
   .row > div { flex:1; }
@@ -71,6 +71,34 @@
 
     <label>提示词</label>
     <input type="text" id="prompt" value="请用简洁自然的中文回答，适合语音朗读，通常控制在150字以内。不要编造实时天气或声称已经控制设备。">
+
+    <label>上下文模式</label>
+    <select id="context_mode">
+      <option value="off">关闭（每问独立）</option>
+      <option value="session" selected>会话内连续</option>
+      <option value="speaker">按说话人连续（需声纹）</option>
+    </select>
+
+    <div id="context_opts">
+      <div class="row">
+        <div>
+          <label>保留轮数 <span class="hint">1–200</span></label>
+          <input type="number" id="context_turns" min="1" max="200" value="20">
+        </div>
+        <div>
+          <label>空闲超时（秒，0 = 不过期）</label>
+          <input type="number" id="context_ttl_sec" min="0" max="1800" value="0">
+        </div>
+      </div>
+    </div>
+
+    <label>思考模式</label>
+    <select id="thinking_mode">
+      <option value="off" selected>关闭（默认，快）</option>
+      <option value="low">开启 · 低</option>
+      <option value="high">开启 · 高</option>
+      <option value="max">开启 · 最高</option>
+    </select>
 
     <label class="check"><input type="checkbox" id="use_command" checked> 使用 MI command 控制（LX04 建议勾选）</label>
     <label class="check"><input type="checkbox" id="speak" checked> 完成后发送一句测试播报</label>
@@ -140,6 +168,12 @@ async function pollOnce() {
   catch (e) { showStatus('读取状态失败：' + e.message, 'err'); }
 }
 
+function syncContext() {
+  $('context_opts').style.display = $('context_mode').value === 'off' ? 'none' : 'block';
+}
+$('context_mode').addEventListener('change', syncContext);
+syncContext();
+
 $('f').addEventListener('submit', async e => {
   e.preventDefault();
   const v = id => $(id).value.trim();
@@ -149,7 +183,11 @@ $('f').addEventListener('submit', async e => {
     account: v('account'), password: $('password').value,
     serial_number: v('serial_number'), mac: v('mac'), dns: v('dns'),
     openai_key: v('openai_key'), bot: v('bot'), openai_backend: v('openai_backend'),
-    prompt: v('prompt'), use_command: $('use_command').checked, speak: $('speak').checked
+    prompt: v('prompt'), use_command: $('use_command').checked, speak: $('speak').checked,
+    context_mode: $('context_mode').value,
+    context_turns: parseInt($('context_turns').value, 10) || 20,
+    context_ttl_sec: parseInt($('context_ttl_sec').value, 10) || 0,
+    thinking_mode: $('thinking_mode').value
   };
   $('submit').disabled = true;
   try {

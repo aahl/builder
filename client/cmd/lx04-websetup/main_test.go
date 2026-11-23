@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"xiaobot"
 )
 
 func TestValidDNS(t *testing.T) {
@@ -39,7 +41,7 @@ func TestSubtleEqual(t *testing.T) {
 }
 
 func TestBuildConfigDefaults(t *testing.T) {
-	cfg := buildConfig(setupInput{Account: " u ", Password: "p", OpenAIKey: "k"})
+	cfg := buildConfig(setupInput{Account: " u ", Password: "p", OpenAIKey: "k"}, nil)
 	if cfg.Hardware != "LX04" {
 		t.Fatalf("hardware = %q", cfg.Hardware)
 	}
@@ -49,8 +51,22 @@ func TestBuildConfigDefaults(t *testing.T) {
 	if cfg.Bot != "deepseek-flash" || cfg.OpenAIBackend != "https://api.deepseek.com" {
 		t.Fatalf("bad defaults: %+v", cfg)
 	}
-	if cfg.GPTOptions == nil {
-		t.Fatal("gpt options missing")
+	if cfg.ContextMode != "session" || cfg.ContextTurns != 20 || cfg.ContextTTLSec != 0 || cfg.ThinkingMode != "off" {
+		t.Fatalf("bad defaults: %+v", cfg)
+	}
+}
+
+func TestBuildConfigPreservesAdvancedFields(t *testing.T) {
+	existing := &xiaobot.Config{
+		GPTOptions: map[string]interface{}{"top_p": 0.9},
+		MusicPath:  "/music",
+	}
+	cfg := buildConfig(setupInput{Account: "a", Password: "p", ContextMode: "off", ThinkingMode: "max"}, existing)
+	if cfg.GPTOptions["top_p"] != 0.9 || cfg.MusicPath != "/music" {
+		t.Fatalf("advanced fields lost: %+v", cfg)
+	}
+	if cfg.ContextMode != "off" || cfg.ThinkingMode != "max" {
+		t.Fatalf("form fields not applied: %+v", cfg)
 	}
 }
 
@@ -61,10 +77,10 @@ func TestReadStatusFromBootstrapFile(t *testing.T) {
 	defer func() { appDir = oldDir }()
 
 	data, _ := json.Marshal(map[string]interface{}{
-		"status":             "verification_required",
+		"status":              "verification_required",
 		"verification_method": "Phone",
-		"exact_matches":      2,
-		"did_configured":     false,
+		"exact_matches":       2,
+		"did_configured":      false,
 	})
 	if err := os.WriteFile(filepath.Join(dir, statusName), data, 0600); err != nil {
 		t.Fatal(err)

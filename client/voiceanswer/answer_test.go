@@ -38,7 +38,7 @@ func TestCurrentRankingHasRealSourcesBeforeAnswer(t *testing.T) {
 		}
 		return &openai.ChatCompletionResponse{Choices: []openai.Choice{{Message: openai.ChatCompletionMessage{Content: "根据榜单回答"}}}}, nil
 	})
-	a, err := e.Answer(context.Background(), "现在排名高的大模型")
+	a, err := e.Answer(context.Background(), "现在排名高的大模型", nil)
 	if err != nil || len(a.Searches) != 1 || a.Text == "" {
 		t.Fatal(a, err)
 	}
@@ -50,7 +50,7 @@ func TestFailedSearchDoesNotInventCurrentAnswer(t *testing.T) {
 		t.Fatal("model used without required fresh evidence")
 		return nil, nil
 	})}
-	if _, err := e.Answer(context.Background(), "搜索最新模型排行榜"); err == nil {
+	if _, err := e.Answer(context.Background(), "搜索最新模型排行榜", nil); err == nil {
 		t.Fatal("failed search accepted")
 	}
 }
@@ -73,7 +73,7 @@ func TestModelCanChooseSearchWithoutFixedKeyword(t *testing.T) {
 		}
 		return &openai.ChatCompletionResponse{Choices: []openai.Choice{{Message: message}}}, nil
 	})
-	a, err := e.Answer(context.Background(), "这个新产品有什么特点")
+	a, err := e.Answer(context.Background(), "这个新产品有什么特点", nil)
 	if err != nil || searched != 1 || round != 2 || a.Text == "" {
 		t.Fatal(a, err)
 	}
@@ -86,7 +86,51 @@ func TestStableQuestionCanSkipSearch(t *testing.T) {
 	}), Chat: chatFunc(func(context.Context, openai.ChatCompletionRequest) (*openai.ChatCompletionResponse, error) {
 		return &openai.ChatCompletionResponse{Choices: []openai.Choice{{Message: openai.ChatCompletionMessage{Content: "二"}}}}, nil
 	})}
-	if a, err := e.Answer(context.Background(), "一加一等于几"); err != nil || len(a.Searches) != 0 {
+	if a, err := e.Answer(context.Background(), "一加一等于几", nil); err != nil || len(a.Searches) != 0 {
 		t.Fatal(a, err)
 	}
+}
+
+func TestHistoryIsPrepended(t *testing.T) {
+	var seen []openai.ChatCompletionMessage
+	e := Engine{Model: "test", Chat: chatFunc(func(_ context.Context, r openai.ChatCompletionRequest) (*openai.ChatCompletionResponse, error) {
+		seen = r.Messages
+		return &openai.ChatCompletionResponse{Choices: []openai.Choice{{Message: openai.ChatCompletionMessage{Content: "好"}}}}, nil
+	})}
+	history := []Turn{{User: "第一问", Assistant: "第一答"}}
+	if _, err := e.Answer(context.Background(), "第二问", history); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 4 || seen[0].Role != "system" || seen[1].Content != "第一问" || seen[2].Content != "第一答" || seen[3].Content != "第二问" {
+		t.Fatalf("bad messages: %+v", seen)
+	}
+}
+
+func TestReasoningContentSurvivesToolRound(t *testing.T) {
+	round := 0
+	var second []openai.ChatCompletionMessage
+	e := Engine{Model: "test", Search: searchFunc(func(context.Context, string, string) (deepseekweb.Result, error) {
+		return deepseekweb.Result{Results: []deepseekweb.Source{{Title: "t", Summary: "s"}}}, nil
+	})}
+	e.Chat = chatFunc(func(_ context.Context, r openai.ChatCompletionRequest) (*openai.ChatCompletionResponse, error) {
+		round++
+		if round == 1 {
+			return &openai.ChatCompletionResponse{Choices: []openai.Choice{{Message: openai.ChatCompletionMessage{
+				Content:          "",
+				ReasoningContent: "思考内容",
+				ToolCalls:        []openai.ToolCall{{ID: "c1", Type: "function", Function: openai.FunctionCall{Name: "web_search", Arguments: `{"query":"x"}`}}},
+			}}}}, nil
+		}
+		second = r.Messages
+		return &openai.ChatCompletionResponse{Choices: []openai.Choice{{Message: openai.ChatCompletionMessage{Content: "答"}}}}, nil
+	})
+	if _, err := e.Answer(context.Background(), "这个产品怎么样", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range second {
+		if m.Role == "assistant" && m.ReasoningContent == "思考内容" {
+			return
+		}
+	}
+	t.Fatalf("reasoning_content lost: %+v", second)
 }

@@ -36,6 +36,7 @@ type agent struct {
 	client     *openai.Client
 	answerer   *voiceanswer.Engine
 	config     *xiaobot.Config
+	conv       *convStore
 	generation int
 	cancel     context.CancelFunc
 	pending    string
@@ -94,10 +95,12 @@ func (a *agent) onQuery(query string) {
 		log.Print("audio gate unavailable; native answer retained")
 		return
 	}
+	key := a.conv.key("")
+	history := a.conv.history(key, time.Now())
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	a.cancel = cancel
 	log.Printf("route=deepseek query=%s", q)
-	go a.answer(ctx, generation, q)
+	go a.answer(ctx, generation, q, key, history)
 	// Bounded watchdog restores audio even if the network or native TTS stalls.
 	go func() {
 		<-ctx.Done()
@@ -109,9 +112,9 @@ func (a *agent) onQuery(query string) {
 		}
 	}()
 }
-func (a *agent) answer(ctx context.Context, generation int, query string) {
+func (a *agent) answer(ctx context.Context, generation int, query, key string, history []voiceanswer.Turn) {
 	started := time.Now()
-	response, err := a.answerer.Answer(ctx, query)
+	response, err := a.answerer.Answer(ctx, query, history)
 	text := devicevoice.SpeechText(response.Text)
 	if len(response.Searches) > 0 {
 		data, _ := json.MarshalIndent(struct {
@@ -158,6 +161,11 @@ func (a *agent) answer(ctx context.Context, generation int, query string) {
 		a.mu.Unlock()
 		return
 	}
+	historyText := strings.TrimSpace(response.Text)
+	if historyText == "" {
+		historyText = text
+	}
+	a.conv.append(key, query, historyText, time.Now())
 	a.mu.Unlock()
 	// Fallback for a native build that does not log its Speak instruction.
 	timer := time.NewTimer(time.Second)
@@ -203,9 +211,18 @@ func main() {
 		log.Fatalf("Xiaomi session initialization failed: %s", safeError(err))
 	}
 	client := openai.NewClient(cfg.OpenAIKey, cfg.OpenAIBackend, "")
-	client.GPTOptions = cfg.GPTOptions
-	answerer := &voiceanswer.Engine{Chat: client, Search: deepseekweb.NewClient(cfg.OpenAIKey), Model: cfg.Bot, Prompt: cfg.Prompt}
-	a := &agent{gate: gate, box: box, client: client, config: cfg, answerer: answerer}
+	client.GPTOptions = cfg.RequestOptions()
+	maxTokens := 512
+	switch cfg.ThinkingMode {
+	case "low", "high":
+		maxTokens = 4096
+	case "max":
+		maxTokens = 8192
+	}
+	answerer := &voiceanswer.Engine{Chat: client, Search: deepseekweb.NewClient(cfg.OpenAIKey), Model: cfg.Bot, Prompt: cfg.Prompt, MaxTokens: maxTokens}
+	conv := newConvStore(cfg.ContextMode, cfg.ContextTurns, time.Duration(cfg.ContextTTLSec)*time.Second)
+	a := &agent{gate: gate, box: box, client: client, config: cfg, answerer: answerer, conv: conv}
+	log.Printf("context=%s turns=%d ttl=%ds thinking=%s", cfg.ContextMode, cfg.ContextTurns, cfg.ContextTTLSec, cfg.ThinkingMode)
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 	go func() {

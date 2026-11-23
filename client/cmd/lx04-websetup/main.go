@@ -66,6 +66,11 @@ type setupInput struct {
 	Prompt        string `json:"prompt"`
 	UseCommand    bool   `json:"use_command"`
 	Speak         bool   `json:"speak"`
+
+	ContextMode   string `json:"context_mode"`
+	ContextTurns  int    `json:"context_turns"`
+	ContextTTLSec int    `json:"context_ttl_sec"`
+	ThinkingMode  string `json:"thinking_mode"`
 }
 
 func newToken() (string, error) {
@@ -107,7 +112,14 @@ func atomicWrite(path string, data []byte, mode os.FileMode) error {
 	return os.Chmod(path, mode)
 }
 
-func buildConfig(in setupInput) xiaobot.Config {
+// buildConfig merges the submitted form into the existing private config so
+// advanced fields that the page does not expose (gpt_options, music_path, ...)
+// survive a web save.
+func buildConfig(in setupInput, existing *xiaobot.Config) xiaobot.Config {
+	cfg := xiaobot.Config{}
+	if existing != nil {
+		cfg = *existing
+	}
 	bot := strings.TrimSpace(in.Bot)
 	if bot == "" {
 		bot = "deepseek-flash"
@@ -120,34 +132,35 @@ func buildConfig(in setupInput) xiaobot.Config {
 	if prompt == "" {
 		prompt = "请用简洁自然的中文回答，适合语音朗读，通常控制在150字以内。不要编造实时天气或声称已经控制设备。"
 	}
-	return xiaobot.Config{
-		Hardware:      "LX04",
-		Account:       strings.TrimSpace(in.Account),
-		Password:      in.Password,
-		Bot:           bot,
-		OpenAIKey:     strings.TrimSpace(in.OpenAIKey),
-		OpenAIBackend: backend,
-		GPTOptions: map[string]interface{}{
-			"thinking": map[string]string{"type": "disabled"},
-		},
-		UseCommand: in.UseCommand,
-		Stream:     false,
-		Verbose:    false,
-		Prompt:     prompt,
-	}
+	cfg.Hardware = "LX04"
+	cfg.Account = strings.TrimSpace(in.Account)
+	cfg.Password = in.Password
+	cfg.Bot = bot
+	cfg.OpenAIKey = strings.TrimSpace(in.OpenAIKey)
+	cfg.OpenAIBackend = backend
+	cfg.UseCommand = in.UseCommand
+	cfg.Stream = false
+	cfg.Verbose = false
+	cfg.Prompt = prompt
+	cfg.ContextMode = in.ContextMode
+	cfg.ContextTurns = in.ContextTurns
+	cfg.ContextTTLSec = in.ContextTTLSec
+	cfg.ThinkingMode = in.ThinkingMode
+	cfg.Normalize()
+	return cfg
 }
 
 // statusResponse intentionally exposes only non-secret state. It never reads
 // config.json or .mi.token, so credentials and signed URLs cannot leak via GET.
 type statusResponse struct {
-	Status           string `json:"status"`
-	Detail           string `json:"detail,omitempty"`
-	VerificationMsg  string `json:"verification_method,omitempty"`
-	ExactMatches     *int   `json:"exact_matches,omitempty"`
-	DidConfigured    bool   `json:"did_configured,omitempty"`
-	SpeechTestSent   bool   `json:"speech_test_sent,omitempty"`
-	Running          bool   `json:"running"`
-	LastError        string `json:"last_error,omitempty"`
+	Status          string `json:"status"`
+	Detail          string `json:"detail,omitempty"`
+	VerificationMsg string `json:"verification_method,omitempty"`
+	ExactMatches    *int   `json:"exact_matches,omitempty"`
+	DidConfigured   bool   `json:"did_configured,omitempty"`
+	SpeechTestSent  bool   `json:"speech_test_sent,omitempty"`
+	Running         bool   `json:"running"`
+	LastError       string `json:"last_error,omitempty"`
 }
 
 func readStatus() statusResponse {
@@ -266,6 +279,33 @@ func handleSetup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "DNS 必须是 IP:端口，例如 192.168.1.1:53", http.StatusBadRequest)
 		return
 	}
+	switch in.ContextMode {
+	case "":
+		in.ContextMode = "session"
+	case "off", "session", "speaker":
+	default:
+		http.Error(w, "上下文模式无效", http.StatusBadRequest)
+		return
+	}
+	if in.ContextTurns == 0 {
+		in.ContextTurns = 20
+	}
+	if in.ContextTurns < 1 || in.ContextTurns > 200 {
+		http.Error(w, "保留轮数必须在 1–200 之间", http.StatusBadRequest)
+		return
+	}
+	if in.ContextTTLSec < 0 || in.ContextTTLSec > 1800 {
+		http.Error(w, "空闲超时必须在 0–1800 秒之间", http.StatusBadRequest)
+		return
+	}
+	switch in.ThinkingMode {
+	case "":
+		in.ThinkingMode = "off"
+	case "off", "low", "high", "max":
+	default:
+		http.Error(w, "思考模式无效", http.StatusBadRequest)
+		return
+	}
 
 	mu.Lock()
 	if running {
@@ -277,7 +317,11 @@ func handleSetup(w http.ResponseWriter, r *http.Request) {
 	runErr = ""
 	mu.Unlock()
 
-	cfg := buildConfig(in)
+	var existing *xiaobot.Config
+	if current, err := xiaobot.NewConfigFromFile(cfgPath); err == nil {
+		existing = current
+	}
+	cfg := buildConfig(in, existing)
 	cfgData, _ := json.MarshalIndent(cfg, "", "  ")
 	deviceData, _ := json.MarshalIndent(map[string]string{
 		"serial_number": strings.TrimSpace(in.SerialNumber),

@@ -33,6 +33,9 @@ type ChatCompletionMessage struct {
 	ToolCalls    []ToolCall    `json:"tool_calls,omitempty"`
 	Name         string        `json:"name,omitempty"`
 	ToolCallID   string        `json:"tool_call_id,omitempty"`
+	// DeepSeek thinking mode requires the assistant reasoning_content to be
+	// echoed back unchanged when tool calls are used in a later round.
+	ReasoningContent string `json:"reasoning_content,omitempty"`
 }
 
 type ToolCall struct {

@@ -26,6 +26,12 @@ type Config struct {
 	Proxy         string                 `json:"proxy,omitempty" toml:"proxy,omitempty"` //支持 HTTP 代理，传入 http proxy URL
 	GPTOptions    map[string]interface{} `json:"gpt_options" toml:"gpt_options"`         //OpenAI API 的参数字典
 
+	ContextMode   string `json:"context_mode" toml:"context_mode"`       // off|session|speaker
+	ContextTurns  int    `json:"context_turns" toml:"context_turns"`     // 1..200
+	ContextTTLSec int    `json:"context_ttl_sec" toml:"context_ttl_sec"` // 0..1800, 0=never expire
+
+	ThinkingMode string `json:"thinking_mode" toml:"thinking_mode"` // off|low|high|max
+
 	Keywords             []string `json:"keyword" toml:"keyword"`                             //自定义请求词列表	["请问"]
 	ChangePromptKeywords []string `json:"change_prompt_keyword" toml:"change_prompt_keyword"` //更改提示词触发列表	["更改提示词"]
 	Thinkingwords        []string `json:"thinking" toml:"thinking"`                           //小爱思考说词
@@ -115,7 +121,54 @@ func (c *Config) PostInit() error {
 			}
 		}
 	}
+	c.Normalize()
 	return nil
+}
+
+// Normalize applies bounded defaults for context and thinking options.
+func (c *Config) Normalize() {
+	switch c.ContextMode {
+	case "off", "session", "speaker":
+	default:
+		c.ContextMode = "session"
+	}
+	if c.ContextTurns == 0 {
+		c.ContextTurns = 20
+	}
+	if c.ContextTurns < 1 {
+		c.ContextTurns = 1
+	}
+	if c.ContextTurns > 200 {
+		c.ContextTurns = 200
+	}
+	if c.ContextTTLSec < 0 {
+		c.ContextTTLSec = 0
+	}
+	if c.ContextTTLSec > 1800 {
+		c.ContextTTLSec = 1800
+	}
+	switch c.ThinkingMode {
+	case "off", "low", "high", "max":
+	default:
+		c.ThinkingMode = "off"
+	}
+}
+
+// RequestOptions merges the configured thinking mode into the advanced
+// gpt_options map without exposing a second source of truth.
+func (c *Config) RequestOptions() map[string]interface{} {
+	opts := make(map[string]interface{}, len(c.GPTOptions)+2)
+	for k, v := range c.GPTOptions {
+		opts[k] = v
+	}
+	if c.ThinkingMode == "off" || c.ThinkingMode == "" {
+		opts["thinking"] = map[string]string{"type": "disabled"}
+		delete(opts, "reasoning_effort")
+	} else {
+		opts["thinking"] = map[string]string{"type": "enabled"}
+		opts["reasoning_effort"] = c.ThinkingMode
+	}
+	return opts
 }
 
 func NewConfigFromFile(path string) (*Config, error) {
@@ -222,7 +275,7 @@ const LatestAskApi = "https://userprofile.mina.mi.com/device_profile/v2/conversa
 const WakeupKeyword = "小爱同学"
 const MicoApi = "micoapi"
 
-//不同型号使用不同的siid/piid组合控制语音功能
+// 不同型号使用不同的siid/piid组合控制语音功能
 var HardwareCommandDict = map[string][5]string{
 	//hardware: (tts_command, action_command, wakeup_command, playing_state[siid,piid,value], 使用play_musci接口的设备)
 	"OH2":   {"5-3", "5-4", "5-1", "3,1,1", "1"}, // Xiaomi 智能音箱 Pro
@@ -250,24 +303,28 @@ var HardwareCommandDict = map[string][5]string{
 	// add more here https://home.miot-spec.com/
 }
 
-/*# 需要使用 play_musci 接口的设备型号
+/*
+# 需要使用 play_musci 接口的设备型号
 /*_USE_PLAY_MUSIC_API = [
-    "LX04",
-    "LX05",
-    "L05B",
-    "L05C",
-    "L06",
-    "L06A",
-    "X08A",
-    "X10A",
-    "X08C",
-    "X08E",
-    "X8F",
-    "X4B",
-    "OH2",
-    "OH2P",
-    "X6A",
-]*/
+
+	"LX04",
+	"LX05",
+	"L05B",
+	"L05C",
+	"L06",
+	"L06A",
+	"X08A",
+	"X10A",
+	"X08C",
+	"X08E",
+	"X8F",
+	"X4B",
+	"OH2",
+	"OH2P",
+	"X6A",
+
+]
+*/
 func ParseHardwareCommandDict(filename string) error {
 	file, err := os.Open(filename)
 	if err != nil {

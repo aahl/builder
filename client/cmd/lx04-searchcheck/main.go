@@ -32,11 +32,18 @@ func main() {
 		os.Exit(1)
 	}
 	client := openai.NewClient(cfg.OpenAIKey, cfg.OpenAIBackend, "")
-	client.GPTOptions = cfg.GPTOptions
-	e := voiceanswer.Engine{Chat: client, Search: deepseekweb.NewClient(cfg.OpenAIKey), Model: cfg.Bot, Prompt: cfg.Prompt}
+	client.GPTOptions = cfg.RequestOptions()
+	maxTokens := 512
+	switch cfg.ThinkingMode {
+	case "low", "high":
+		maxTokens = 4096
+	case "max":
+		maxTokens = 8192
+	}
+	e := voiceanswer.Engine{Chat: client, Search: deepseekweb.NewClient(cfg.OpenAIKey), Model: cfg.Bot, Prompt: cfg.Prompt, MaxTokens: maxTokens}
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
-	answer, err := e.Answer(ctx, *query)
+	answer, err := e.Answer(ctx, *query, nil)
 	if err != nil {
 		fmt.Println("Live-search test failed; authentication and response details suppressed")
 		os.Exit(1)

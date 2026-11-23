@@ -14,31 +14,40 @@ func ParseEvent(line string) Event {
 	if i := strings.Index(line, "MSG_ASR_FINAL_RESULT:"); i >= 0 {
 		return Event{"query", strings.TrimSpace(line[i+len("MSG_ASR_FINAL_RESULT:"):])}
 	}
-	i := strings.Index(line, "instruction=")
-	if i < 0 {
-		return Event{}
-	}
-	var item struct {
-		Header struct {
-			Namespace string `json:"namespace"`
-			Name      string `json:"name"`
-		} `json:"header"`
-		Payload struct {
-			Text    string `json:"text"`
-			Final   bool   `json:"is_final"`
-			Results []struct {
-				Text string `json:"text"`
-			} `json:"results"`
-		} `json:"payload"`
-	}
-	if json.Unmarshal([]byte(line[i+len("instruction="):]), &item) != nil {
-		return Event{}
-	}
-	if item.Header.Namespace == "SpeechSynthesizer" && item.Header.Name == "Speak" {
-		return Event{"speak", item.Payload.Text}
-	}
-	if item.Header.Namespace == "SpeechRecognizer" && item.Header.Name == "RecognizeResult" && item.Payload.Final && len(item.Payload.Results) > 0 {
-		return Event{"query", item.Payload.Results[0].Text}
+	// Firmware 2.37.64 posts the recognised text as Nlp.Request before the
+	// native answer starts; 2.42.x also emits RecognizeResult. Accept both the
+	// instruction= and eventStr= JSON envelopes so either path is routed.
+	for _, marker := range []string{"instruction=", "eventStr="} {
+		i := strings.Index(line, marker)
+		if i < 0 {
+			continue
+		}
+		var item struct {
+			Header struct {
+				Namespace string `json:"namespace"`
+				Name      string `json:"name"`
+			} `json:"header"`
+			Payload struct {
+				Text    string `json:"text"`
+				Query   string `json:"query"`
+				Final   bool   `json:"is_final"`
+				Results []struct {
+					Text string `json:"text"`
+				} `json:"results"`
+			} `json:"payload"`
+		}
+		if json.Unmarshal([]byte(line[i+len(marker):]), &item) != nil {
+			continue
+		}
+		if item.Header.Namespace == "SpeechSynthesizer" && item.Header.Name == "Speak" {
+			return Event{"speak", item.Payload.Text}
+		}
+		if item.Header.Namespace == "Nlp" && item.Header.Name == "Request" && strings.TrimSpace(item.Payload.Query) != "" {
+			return Event{"query", strings.TrimSpace(item.Payload.Query)}
+		}
+		if item.Header.Namespace == "SpeechRecognizer" && item.Header.Name == "RecognizeResult" && item.Payload.Final && len(item.Payload.Results) > 0 {
+			return Event{"query", item.Payload.Results[0].Text}
+		}
 	}
 	return Event{}
 }

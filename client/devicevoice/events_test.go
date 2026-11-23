@@ -30,4 +30,9 @@ func TestLocalSpeechEvents(t *testing.T) {
 	if e := ParseEvent(`instruction={"header":{"namespace":"SpeechSynthesizer","name":"Speak"},"payload":{"text":"回答内容"}}`); e.Kind != "speak" || e.Text != "回答内容" {
 		t.Fatal(e)
 	}
+	// Firmware 2.37.64 posts the recognised query as Nlp.Request via eventStr=.
+	nlp := `[Binder:10146_6] [MiAivsWrapper]: postEvent=true,eventStr={"header":{"name":"Request","namespace":"Nlp","id":"9b8941ef"},"payload":{"query":"彩虹是怎么形成"},"context":[]}`
+	if e := ParseEvent(nlp); e.Kind != "query" || e.Text != "彩虹是怎么形成" {
+		t.Fatal(e)
+	}
 }

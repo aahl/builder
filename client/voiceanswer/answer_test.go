@@ -116,6 +116,7 @@ func TestReasoningContentSurvivesToolRound(t *testing.T) {
 		round++
 		if round == 1 {
 			return &openai.ChatCompletionResponse{Choices: []openai.Choice{{Message: openai.ChatCompletionMessage{
+				Role:             "assistant",
 				Content:          "",
 				ReasoningContent: "思考内容",
 				ToolCalls:        []openai.ToolCall{{ID: "c1", Type: "function", Function: openai.FunctionCall{Name: "web_search", Arguments: `{"query":"x"}`}}},

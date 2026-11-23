@@ -17,5 +17,17 @@ jobs:
             third_party/ninego/*/go.sum
       - name: Source, privacy, and unit checks
         run: make test
-      - name: Build four speaker-side commands
+      - name: Build speaker-side commands
         run: make build
+      - name: Upload ARMv7 binaries
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: lx04-armv7
+          path: |
+            dist/lx04-agent
+            dist/lx04-bootstrap
+            dist/lx04-netcheck
+            dist/lx04-searchcheck
+            dist/lx04-websetup
+            dist/SHA256SUMS
+          if-no-files-found: error

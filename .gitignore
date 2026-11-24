@@ -36,6 +36,7 @@ __pycache__/
 device-match.json
 dns-server.txt
 otp.txt
+websetup.url
 otp-session.json
 otp-*.response
 login-verification.json

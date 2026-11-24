@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>小爱音箱 LX04 · Web 配置</title>
+<style>
+  :root { color-scheme: light; --fg:#1f2937; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb; --ok:#059669; --err:#dc2626; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; margin:0; padding:24px; background:#f9fafb; color:var(--fg); }
+  .card { max-width:640px; margin:0 auto; background:#fff; border:1px solid var(--line); border-radius:12px; padding:24px; box-shadow:0 4px 12px rgba(0,0,0,.04); }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin:0 0 20px; line-height:1.6; }
+  label { display:block; font-size:13px; font-weight:600; margin:14px 0 6px; }
+  input[type=text], input[type=password] { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px; }
+  input:focus { outline:2px solid rgba(37,99,235,.4); border-color:var(--accent); }
+  .row { display:flex; gap:12px; }
+  .row > div { flex:1; }
+  .check { display:flex; align-items:center; gap:8px; font-weight:400; }
+  .check input { width:16px; height:16px; }
+  button { margin-top:22px; width:100%; padding:12px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-size:15px; font-weight:600; cursor:pointer; }
+  button:disabled { background:#9ca3af; cursor:not-allowed; }
+  #status { margin-top:20px; padding:12px 14px; border-radius:8px; background:#f3f4f6; font-size:13px; line-height:1.7; display:none; }
+  #status.ok { background:#ecfdf5; color:var(--ok); }
+  #status.err { background:#fef2f2; color:var(--err); }
+  .otp { margin-top:16px; padding:14px; border:1px dashed var(--accent); border-radius:8px; display:none; }
+  .otp label { margin-top:0; }
+  .hint { color:var(--muted); font-size:12px; font-weight:400; margin-top:4px; }
+  code { background:#f3f4f6; padding:2px 5px; border-radius:4px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>小爱音箱 LX04 · Web 配置</h1>
+  <p class="sub">本页仅在音箱上本地运行，用于配置小米账号与 DeepSeek。账号密码仅写入设备上的 <code>/data/adb/lx04-deepseek/</code>（权限 0600），不会回显。请只在可信局域网内使用。</p>
+
+  <form id="f" autocomplete="off">
+    <label>小米账号 <span class="hint">绑定音箱的那个账号</span></label>
+    <input type="text" id="account" placeholder="手机号 / 邮箱">
+
+    <label>密码</label>
+    <input type="password" id="password" placeholder="小米账号密码">
+
+    <div class="row">
+      <div>
+        <label>设备序列号 SN</label>
+        <input type="text" id="serial_number" placeholder="从小米设备页面读取">
+      </div>
+      <div>
+        <label>或 MAC 地址</label>
+        <input type="text" id="mac" placeholder="SN / MAC 至少填一项">
+      </div>
+    </div>
+
+    <label>DNS 服务器 <span class="hint">IP:端口，例如 192.168.1.1:53</span></label>
+    <input type="text" id="dns" placeholder="192.168.1.1:53">
+
+    <label>DeepSeek API Key</label>
+    <input type="password" id="openai_key" placeholder="sk-...">
+
+    <div class="row">
+      <div>
+        <label>模型 ID</label>
+        <input type="text" id="bot" value="deepseek-flash">
+      </div>
+      <div>
+        <label>API 地址</label>
+        <input type="text" id="openai_backend" value="https://api.deepseek.com">
+      </div>
+    </div>
+
+    <label>提示词</label>
+    <input type="text" id="prompt" value="请用简洁自然的中文回答，适合语音朗读，通常控制在150字以内。不要编造实时天气或声称已经控制设备。">
+
+    <label class="check"><input type="checkbox" id="use_command" checked> 使用 MI command 控制（LX04 建议勾选）</label>
+    <label class="check"><input type="checkbox" id="speak" checked> 完成后发送一句测试播报</label>
+
+    <button type="submit" id="submit">保存并登录</button>
+  </form>
+
+  <div class="otp" id="otpbox">
+    <label>小米安全验证码 <span id="otpmethod" class="hint"></span></label>
+    <input type="text" id="otpcode" placeholder="短信 / 邮箱收到的验证码">
+    <button type="button" id="otpsubmit" style="margin-top:10px">提交验证码</button>
+  </div>
+
+  <div id="status"></div>
+</div>
+
+<script>
+const TOKEN = "__WEBSETUP_TOKEN__";
+const $ = id => document.getElementById(id);
+let polling = null;
+
+function showStatus(text, kind) {
+  const el = $('status');
+  el.style.display = 'block';
+  el.className = kind || '';
+  el.textContent = text;
+}
+
+async function api(path, body) {
+  const opt = { method: body ? 'POST' : 'GET', headers: {'Content-Type':'application/json'} };
+  if (body) opt.body = JSON.stringify(Object.assign({token: TOKEN}, body));
+  const sep = path.includes('?') ? '&' : '?';
+  const res = await fetch(path + sep + 'token=' + encodeURIComponent(TOKEN), opt);
+  let data = {};
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) throw new Error(data.detail || data.error || ('HTTP ' + res.status));
+  return data;
+}
+
+function render(s) {
+  const map = {
+    idle: '等待配置提交',
+    xiaomi_login_or_device_list_failed: '小米登录或设备列表获取失败',
+    speaker_match_failed: '设备精确匹配失败（请检查 SN / MAC）',
+    verification_required: '需要安全验证，请在下方输入验证码',
+    ready: '配置完成：已写入 token 与设备 DID，可以开始语音使用'
+  };
+  let text = map[s.status] || ('状态：' + s.status);
+  if (s.exact_matches !== undefined && s.exact_matches !== null) text += ' · 精确匹配数：' + s.exact_matches;
+  if (s.did_configured) text += ' · DID 已写入';
+  if (s.speech_test_sent) text += ' · 测试播报已发送';
+  if (s.detail) text += ' · ' + s.detail;
+  if (s.last_error && s.status !== 'ready') text += ' · ' + s.last_error;
+  showStatus(text, s.status === 'ready' ? 'ok' : (s.status.indexOf('failed') >= 0 || s.status === 'error' ? 'err' : ''));
+
+  const needOtp = s.status === 'verification_required';
+  $('otpbox').style.display = needOtp ? 'block' : 'none';
+  if (needOtp) $('otpmethod').textContent = s.verification_method ? ('（' + s.verification_method + '）') : '';
+  if (s.status === 'ready' || (s.status.indexOf('failed') >= 0)) {
+    if (polling) { clearInterval(polling); polling = null; }
+    $('submit').disabled = false;
+  }
+}
+
+async function pollOnce() {
+  try { render(await api('/api/status')); }
+  catch (e) { showStatus('读取状态失败：' + e.message, 'err'); }
+}
+
+$('f').addEventListener('submit', async e => {
+  e.preventDefault();
+  const v = id => $(id).value.trim();
+  if (!v('account') || !$('password').value) { showStatus('请填写小米账号和密码', 'err'); return; }
+  if (!v('serial_number') && !v('mac')) { showStatus('序列号和 MAC 至少填写一项', 'err'); return; }
+  const body = {
+    account: v('account'), password: $('password').value,
+    serial_number: v('serial_number'), mac: v('mac'), dns: v('dns'),
+    openai_key: v('openai_key'), bot: v('bot'), openai_backend: v('openai_backend'),
+    prompt: v('prompt'), use_command: $('use_command').checked, speak: $('speak').checked
+  };
+  $('submit').disabled = true;
+  try {
+    await api('/api/setup', body);
+    showStatus('已保存配置并启动登录，请稍候…');
+    if (polling) clearInterval(polling);
+    polling = setInterval(pollOnce, 2000);
+    pollOnce();
+  } catch (err) {
+    showStatus('提交失败：' + err.message, 'err');
+    $('submit').disabled = false;
+  }
+});
+
+$('otpsubmit').addEventListener('click', async () => {
+  const code = $('otpcode').value.trim();
+  if (!code) return;
+  try {
+    await api('/api/otp', {code: code});
+    $('otpcode').value = '';
+    showStatus('验证码已提交，等待登录继续…');
+    pollOnce();
+  } catch (err) {
+    showStatus('验证码提交失败：' + err.message, 'err');
+  }
+});
+
+pollOnce();
+</script>
+</body>
+</html>

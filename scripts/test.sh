@@ -7,4 +7,4 @@ for file in "$ROOT"/scripts/*.sh; do sh -n "$file"; done
 python3 "$ROOT/scripts/test_device_service.py"
 cd "$ROOT/client"
 go test . ./devicevoice ./runtimeenv ./jarvis/openai ./miservice ./deepseekweb ./voiceanswer \
-    ./cmd/lx04-agent ./cmd/lx04-bootstrap ./cmd/lx04-netcheck ./cmd/lx04-searchcheck
+    ./cmd/lx04-agent ./cmd/lx04-bootstrap ./cmd/lx04-netcheck ./cmd/lx04-searchcheck ./cmd/lx04-websetup

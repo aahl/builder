@@ -17,9 +17,9 @@ func TestNormalizeBounds(t *testing.T) {
 	if c.ContextMode != "session" || c.ContextTurns != 200 || c.ContextTTLSec != 0 || c.ThinkingMode != "off" {
 		t.Fatalf("bad clamp: %+v", c)
 	}
-	c = Config{ContextMode: "off", ContextTurns: 0, ContextTTLSec: 9999, ThinkingMode: "max"}
+	c = Config{ContextMode: "off", ContextTurns: 0, ContextTTLSec: 86400, ThinkingMode: "max"}
 	c.Normalize()
-	if c.ContextTurns != 20 || c.ContextTTLSec != 1800 || c.ThinkingMode != "max" {
+	if c.ContextTurns != 20 || c.ContextTTLSec != 86400 || c.ThinkingMode != "max" {
 		t.Fatalf("bad clamp: %+v", c)
 	}
 }

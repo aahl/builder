@@ -345,8 +345,8 @@ func validateRuntime(mode string, turns, ttl int, thinking string) (string, int,
 	if turns < 1 || turns > 200 {
 		return "", 0, 0, "", fmt.Errorf("保留轮数必须在 1–200 之间")
 	}
-	if ttl < 0 || ttl > 1800 {
-		return "", 0, 0, "", fmt.Errorf("空闲超时必须在 0–1800 秒之间")
+	if ttl < 0 {
+		return "", 0, 0, "", fmt.Errorf("空闲超时不能为负数")
 	}
 	switch thinking {
 	case "":
@@ -413,8 +413,14 @@ func handleRuntime(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "配置写入失败", http.StatusInternalServerError)
 		return
 	}
+	pid, restarted := restartAgent(appDir)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"status": "saved", "restart_required": true})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":           "saved",
+		"agent_restarted":  restarted,
+		"agent_pid":        pid,
+		"restart_required": !restarted,
+	})
 }
 
 func handleSetup(w http.ResponseWriter, r *http.Request) {

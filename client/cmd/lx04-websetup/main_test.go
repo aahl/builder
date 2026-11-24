@@ -165,9 +165,9 @@ func TestValidateRuntime(t *testing.T) {
 		{"bogus", 20, 0, "off", true},
 		{"session", 201, 0, "off", true},
 		{"session", 20, -1, "off", true},
-		{"session", 20, 1801, "off", true},
 		{"session", 20, 0, "bogus", true},
 		{"speaker", 1, 1800, "max", false},
+		{"session", 20, 86400, "off", false},
 	} {
 		_, _, _, _, err := validateRuntime(tc.mode, tc.turns, tc.ttl, tc.think)
 		if (err != nil) != tc.failed {

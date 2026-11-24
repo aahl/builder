@@ -28,7 +28,7 @@ type Config struct {
 
 	ContextMode   string `json:"context_mode" toml:"context_mode"`       // off|session|speaker
 	ContextTurns  int    `json:"context_turns" toml:"context_turns"`     // 1..200
-	ContextTTLSec int    `json:"context_ttl_sec" toml:"context_ttl_sec"` // 0..1800, 0=never expire
+	ContextTTLSec int    `json:"context_ttl_sec" toml:"context_ttl_sec"` // >=0, 0=never expire
 
 	ThinkingMode string `json:"thinking_mode" toml:"thinking_mode"` // off|low|high|max
 
@@ -143,9 +143,6 @@ func (c *Config) Normalize() {
 	}
 	if c.ContextTTLSec < 0 {
 		c.ContextTTLSec = 0
-	}
-	if c.ContextTTLSec > 1800 {
-		c.ContextTTLSec = 1800
 	}
 	switch c.ThinkingMode {
 	case "off", "low", "high", "max":

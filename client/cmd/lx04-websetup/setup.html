@@ -86,7 +86,7 @@
           <input type="number" id="context_turns" min="1" max="200" value="20">
         </div>
         <div>
-          <label>空闲超时（秒，0 = 不过期）</label>
+          <label>空闲超时 <span class="hint">0–1800 秒，0 = 不过期</span></label>
           <input type="number" id="context_ttl_sec" min="0" max="1800" value="0">
         </div>
       </div>
@@ -133,10 +133,23 @@ async function api(path, body) {
   if (body) opt.body = JSON.stringify(Object.assign({token: TOKEN}, body));
   const sep = path.includes('?') ? '&' : '?';
   const res = await fetch(path + sep + 'token=' + encodeURIComponent(TOKEN), opt);
+  const raw = await res.text().catch(() => '');
   let data = {};
-  try { data = await res.json(); } catch (e) {}
-  if (!res.ok) throw new Error(data.detail || data.error || ('HTTP ' + res.status));
+  try { data = JSON.parse(raw); } catch (e) { data = { message: raw.trim() }; }
+  if (!res.ok) throw new Error(data.detail || data.error || data.message || ('HTTP ' + res.status));
   return data;
+}
+
+function runtimeBody() {
+  const body = {
+    context_mode: $('context_mode').value,
+    context_turns: parseInt($('context_turns').value, 10) || 20,
+    context_ttl_sec: parseInt($('context_ttl_sec').value, 10) || 0,
+    thinking_mode: $('thinking_mode').value
+  };
+  if (body.context_turns < 1 || body.context_turns > 200) throw new Error('保留轮数必须在 1–200 之间');
+  if (body.context_ttl_sec < 0 || body.context_ttl_sec > 1800) throw new Error('空闲超时必须在 0–1800 秒之间');
+  return body;
 }
 
 function render(s) {
@@ -198,12 +211,7 @@ async function loadConfig() {
 $('save_runtime').addEventListener('click', async () => {
   $('save_runtime').disabled = true;
   try {
-    await api('/api/runtime', {
-      context_mode: $('context_mode').value,
-      context_turns: parseInt($('context_turns').value, 10) || 20,
-      context_ttl_sec: parseInt($('context_ttl_sec').value, 10) || 0,
-      thinking_mode: $('thinking_mode').value
-    });
+    await api('/api/runtime', runtimeBody());
     showStatus('运行参数已保存；重启 agent 后生效。', 'ok');
   } catch (e) {
     showStatus('保存失败：' + e.message, 'err');
@@ -220,12 +228,14 @@ $('f').addEventListener('submit', async e => {
     account: v('account'), password: $('password').value,
     serial_number: v('serial_number'), mac: v('mac'), dns: v('dns'),
     openai_key: v('openai_key'), bot: v('bot'), openai_backend: v('openai_backend'),
-    prompt: v('prompt'), use_command: $('use_command').checked, speak: $('speak').checked,
-    context_mode: $('context_mode').value,
-    context_turns: parseInt($('context_turns').value, 10) || 20,
-    context_ttl_sec: parseInt($('context_ttl_sec').value, 10) || 0,
-    thinking_mode: $('thinking_mode').value
+    prompt: v('prompt'), use_command: $('use_command').checked, speak: $('speak').checked
   };
+  try {
+    Object.assign(body, runtimeBody());
+  } catch (err) {
+    showStatus(err.message, 'err');
+    return;
+  }
   $('submit').disabled = true;
   try {
     await api('/api/setup', body);
